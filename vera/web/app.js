@@ -22,6 +22,8 @@ const state = {
   wakeSpeaking: false,
   wakeRec: null,
   wakeTimer: null,
+  ttsGenId: 0,
+  currentSpokenText: "",
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -133,28 +135,128 @@ function appendMessage(role, content, metaText = "") {
   box.scrollTop = box.scrollHeight;
 }
 
+function splitIntoSpeechSentences(rawText) {
+  const cleaned = rawText
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[#*_~>|`]+/g, " ")
+    .replace(/\n+/g, ". ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return [];
+  const rawParts = cleaned.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [cleaned];
+  const chunks = [];
+  let buf = "";
+  for (const part of rawParts) {
+    const s = part.trim();
+    if (!s) continue;
+    if ((buf + " " + s).trim().length <= 170) {
+      buf = (buf + " " + s).trim();
+    } else {
+      if (buf) chunks.push(buf);
+      buf = s;
+    }
+    if (chunks.length >= 6) break;
+  }
+  if (buf && chunks.length < 6) chunks.push(buf);
+  return chunks;
+}
+
+function normalizeTr(str) {
+  return (str || "")
+    .toLowerCase()
+    .replace(/[^\wçğıöşü\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLikelySpeakerEcho(heardRaw, spokenRaw) {
+  const heard = normalizeTr(heardRaw);
+  if (!heard) return true;
+  // Explicit interrupt commands always trigger barge-in immediately
+  if (/\b(hey\s*vera|vera\s*dur|dur\s*vera|bekle|sus|kes|tamam\s*dur|jarvis\s*dur|hey\s*jarvis)\b/i.test(heard)) {
+    return false;
+  }
+  const spoken = normalizeTr(spokenRaw);
+  if (!spoken) return false;
+  if (spoken.includes(heard)) return true;
+  const heardWords = heard.split(" ").filter((w) => w.length > 2);
+  if (!heardWords.length) return true;
+  const matched = heardWords.filter((w) => spoken.includes(w));
+  return matched.length / heardWords.length >= 0.55;
+}
+
+function interruptVeraSpeech() {
+  state.ttsGenId += 1;
+  if (state.currentAudio) {
+    try { state.currentAudio.pause(); } catch {}
+    state.currentAudio = null;
+  }
+  if (state.liveAudio) {
+    try { state.liveAudio.pause(); } catch {}
+    state.liveAudio = null;
+  }
+  state.wakeSpeaking = false;
+  state.currentSpokenText = "";
+  $("#voice-orb")?.classList.remove("speaking");
+  state.wakeAwake = true;
+  armWakeSleepTimer(30000);
+  setWakeBannerState("awake", "🎙️ SÖZÜNÜZÜ DİNLİYORUM YUSUF BEY — Buyurun devam edin...");
+}
+
 async function playTTS(text, onDone = null) {
-  try {
-    if (state.currentAudio) {
-      try { state.currentAudio.pause(); } catch {}
-      state.currentAudio = null;
-    }
-    state.wakeSpeaking = true;
-    if (state.wakeRec) {
-      try { state.wakeRec.abort(); } catch {}
-    }
-    setWakeBannerState("speaking", "🔊 VERA konuşuyor... (Sözünü kesip yeni komut vermek için buraya dokunun)");
-    const resp = await api("/api/voice/tts", {
+  const genId = ++state.ttsGenId;
+  if (state.currentAudio) {
+    try { state.currentAudio.pause(); } catch {}
+    state.currentAudio = null;
+  }
+
+  const sentences = splitIntoSpeechSentences(text);
+  if (!sentences.length) {
+    if (onDone) onDone();
+    return;
+  }
+
+  state.wakeSpeaking = true;
+  state.currentSpokenText = sentences.join(" ");
+  ensureWakeRecognizerRunning();
+  setWakeBannerState("speaking", "🔊 VERA konuşuyor... (Konuşmaya başlarsanız anında susup sizi dinler)");
+
+  // Pipeline prefetch all sentence audio blobs in parallel for 0ms gap between sentences
+  const fetchPromises = sentences.map((sentence) =>
+    api("/api/voice/tts", {
       method: "POST",
-      body: JSON.stringify({ message: text, voice: state.ttsVoice }),
-    });
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    state.currentAudio = audio;
-    const finish = () => {
+      body: JSON.stringify({ message: sentence, voice: state.ttsVoice }),
+    })
+      .then((r) => r.blob())
+      .catch(() => null)
+  );
+
+  try {
+    for (let i = 0; i < fetchPromises.length; i++) {
+      if (state.ttsGenId !== genId) return; // Interrupted by barge-in!
+      const blob = await fetchPromises[i];
+      if (!blob || state.ttsGenId !== genId) continue;
+
+      await new Promise((resolve) => {
+        if (state.ttsGenId !== genId) return resolve();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        state.currentAudio = audio;
+        const done = () => {
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        audio.onended = done;
+        audio.onerror = done;
+        audio.play().catch(done);
+      });
+    }
+  } finally {
+    if (state.ttsGenId === genId) {
       state.wakeSpeaking = false;
       state.currentAudio = null;
+      state.currentSpokenText = "";
       if (state.wakeAwake) {
         setWakeBannerState("awake", "🎙️ VERA DİNLİYOR — Buyurun Yusuf Bey, komutunuzu söyleyin...");
         armWakeSleepTimer(30000);
@@ -163,15 +265,7 @@ async function playTTS(text, onDone = null) {
       }
       ensureWakeRecognizerRunning();
       if (onDone) onDone();
-    };
-    audio.onended = finish;
-    audio.onerror = finish;
-    await audio.play();
-  } catch (err) {
-    state.wakeSpeaking = false;
-    ensureWakeRecognizerRunning();
-    if (onDone) onDone();
-    console.warn("Seslendirilemedi:", err.message);
+    }
   }
 }
 
@@ -259,7 +353,7 @@ async function executeWakeVoiceCommand(commandText) {
 
 function ensureWakeRecognizerRunning() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec || !state.wakeEnabled || state.liveActive || state.wakeSpeaking || state.wakeBusy) return;
+  if (!SpeechRec || !state.wakeEnabled || state.liveActive || state.wakeBusy) return;
   if (state.wakeRec) return;
 
   try {
@@ -267,14 +361,25 @@ function ensureWakeRecognizerRunning() {
     state.wakeRec = rec;
     rec.lang = "tr-TR";
     rec.continuous = true;
-    rec.interimResults = false;
+    rec.interimResults = true;
 
     rec.onresult = async (ev) => {
-      if (state.wakeSpeaking || state.wakeBusy) return;
+      if (state.wakeBusy) return;
       const lastResult = ev.results[ev.results.length - 1];
-      if (!lastResult || !lastResult.isFinal) return;
+      if (!lastResult) return;
       const spoken = (lastResult[0]?.transcript || "").trim();
       if (!spoken) return;
+
+      // BARGE-IN: If VERA is currently speaking and user starts talking (non-echo), stop VERA immediately!
+      if (state.wakeSpeaking) {
+        if (!isLikelySpeakerEcho(spoken, state.currentSpokenText) && spoken.length >= 3) {
+          interruptVeraSpeech();
+        } else {
+          return;
+        }
+      }
+
+      if (!lastResult.isFinal) return;
 
       const wakeRegex = /\b(?:hey\s*vera|ey\s*vera|hei\s*vera|hey\s*bera|merhaba\s*vera|alo\s*vera|hey\s*jarvis|vera|jarvis)\b/i;
 
@@ -293,7 +398,7 @@ function ensureWakeRecognizerRunning() {
           await playTTS(greeting);
         }
       } else {
-        // Already awake and waiting for command!
+        // Already awake (or just interrupted VERA via barge-in) -> execute command!
         playJarvisChime();
         armWakeSleepTimer(30000);
         const stripped = spoken.replace(wakeRegex, "").replace(/^[\s,.:;!?-]+/, "").trim() || spoken;
@@ -307,20 +412,20 @@ function ensureWakeRecognizerRunning() {
         setWakeBannerState("standby", '⚠️ Mikrofon izni gerekli — "Hey Vera" nöbetini başlatmak için bu şeride dokunun.');
         return;
       }
-      if (state.wakeEnabled && !state.wakeSpeaking) {
-        setTimeout(ensureWakeRecognizerRunning, 900);
+      if (state.wakeEnabled && !state.wakeBusy) {
+        setTimeout(ensureWakeRecognizerRunning, 600);
       }
     };
 
     rec.onend = () => {
       state.wakeRec = null;
-      if (state.wakeEnabled && !state.wakeSpeaking && !state.wakeBusy && !state.liveActive) {
-        setTimeout(ensureWakeRecognizerRunning, 350);
+      if (state.wakeEnabled && !state.wakeBusy && !state.liveActive) {
+        setTimeout(ensureWakeRecognizerRunning, 250);
       }
     };
 
     rec.start();
-    if (!state.wakeAwake) {
+    if (!state.wakeAwake && !state.wakeSpeaking) {
       setWakeBannerState("standby", '🟢 "Hey Vera" nöbeti aktif — "Hey Vera" diyerek seslenebilirsiniz.');
     }
   } catch {
@@ -670,10 +775,21 @@ async function startLiveVoice() {
       const rec = new SpeechRec();
       state.liveRec = rec;
       rec.lang = "tr-TR";
-      rec.interimResults = false;
+      rec.interimResults = true;
       rec.onresult = async (ev) => {
-        const text = ev.results[0][0].transcript.trim();
+        const lastRes = ev.results[ev.results.length - 1];
+        if (!lastRes) return;
+        const text = (lastRes[0]?.transcript || "").trim();
         if (!text || !state.liveActive) return;
+        if (state.wakeSpeaking) {
+          if (!isLikelySpeakerEcho(text, state.currentSpokenText) && text.length >= 3) {
+            interruptVeraSpeech();
+            $("#voice-status").textContent = "🎙️ Sözünüzü dinliyorum Yusuf Bey...";
+          } else {
+            return;
+          }
+        }
+        if (!lastRes.isFinal) return;
         addVoiceTranscript("user", text);
         $("#voice-status").textContent = "⚡ VERA düşünüyor ve araçları çalıştırıyor...";
         try {
@@ -688,25 +804,15 @@ async function startLiveVoice() {
             pill.classList.remove("hidden");
           }
           addVoiceTranscript("assistant", data.reply);
-          $("#voice-status").textContent = "🔊 VERA konuşuyor...";
+          $("#voice-status").textContent = "🔊 VERA konuşuyor... (Konuşmaya başlarsanız anında susup sizi dinler)";
           $("#voice-orb").classList.add("speaking");
-          const resp = await api("/api/voice/tts", {
-            method: "POST",
-            body: JSON.stringify({ message: data.reply }),
+          listenTurn();
+          await playTTS(data.reply, () => {
+            $("#voice-orb").classList.remove("speaking");
+            if (state.liveActive) {
+              $("#voice-status").textContent = "🎙️ VERA seni dinliyor — doğal Türkçe konuşabilirsin";
+            }
           });
-          const blob = await resp.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          state.liveAudio = audio;
-          audio.onended = () => {
-            $("#voice-orb").classList.remove("speaking");
-            if (state.liveActive) listenTurn();
-          };
-          audio.onerror = () => {
-            $("#voice-orb").classList.remove("speaking");
-            if (state.liveActive) listenTurn();
-          };
-          await audio.play();
         } catch (err) {
           $("#voice-status").textContent = "Hata: " + err.message;
           if (state.liveActive) setTimeout(listenTurn, 1500);

@@ -18,15 +18,24 @@ logger = logging.getLogger("vera.voice")
 
 
 def clean_text_for_speech(text: str, max_chars: int = 1200) -> str:
-    """Strips Markdown symbols, code blocks, and URLs for natural Turkish voice output."""
-    text = re.sub(r"```[\s\S]*?```", " kod bloğu ", text)
+    """Strips Markdown symbols, emojis, code blocks, and URLs for fluent Turkish voice output."""
+    text = re.sub(r"```[\s\S]*?```", " kod bloğu. ", text)
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]", r"\1: ", text)
     text = re.sub(r"https?://\S+", "", text)
+    # Convert Turkish percentage format %84.0 -> yüzde 84
+    text = re.sub(r"%\s*(\d+)(?:[.,]\d+)?", r"yüzde \1", text)
+    # Remove emojis and pictographs so TTS never spells out emoji names
+    text = re.sub(r"[\U00010000-\U0010ffff\u2600-\u27bf\ufe0f]+", " ", text)
+    text = re.sub(r"[-─═]{2,}", ". ", text)
+    text = re.sub(r"(?m)^\s*[•*\-+]\s+", "", text)
     text = re.sub(r"[#*_~>|]+", " ", text)
+    text = re.sub(r"\n+", ". ", text)
+    text = re.sub(r"(\.\s*){2,}", ". ", text)
     text = re.sub(r"\s+", " ", text).strip()
     if len(text) > max_chars:
-        text = text[:max_chars].rsplit(" ", 1)[0] + "... Detayları yazılı olarak da paylaştım."
+        text = text[:max_chars].rsplit(" ", 1)[0] + "... Detaylar ekranda mevcut Efendim."
     return text
 
 
@@ -65,23 +74,22 @@ class VoiceEngine:
         return await self.llm.transcribe_with_gemini(audio_bytes=audio_bytes, mime_type=mime_type)
 
     async def synthesize_mp3(self, text: str, voice: str | None = None) -> bytes:
-        """Synthesizes natural Turkish MP3 audio via free Microsoft Edge-TTS."""
+        """Synthesizes fluent Turkish MP3 audio in-memory via free Microsoft Edge-TTS."""
         import edge_tts
 
         speech_text = clean_text_for_speech(text)
         if not speech_text:
             raise ValueError("Seslendirilecek metin boş.")
 
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-            mp3_path = Path(tmp.name)
-
         selected_voice = (voice or self.settings.tts_voice or "tr-TR-AhmetNeural").strip()
-        try:
-            communicate = edge_tts.Communicate(speech_text, voice=selected_voice)
-            await communicate.save(str(mp3_path))
-            return mp3_path.read_bytes()
-        finally:
-            mp3_path.unlink(missing_ok=True)
+        communicate = edge_tts.Communicate(speech_text, voice=selected_voice, rate="+12%")
+        audio_chunks: list[bytes] = []
+        async for chunk in communicate.stream():
+            if chunk.get("type") == "audio" and chunk.get("data"):
+                audio_chunks.append(chunk["data"])
+        if not audio_chunks:
+            raise RuntimeError("TTS ses verisi üretilemedi.")
+        return b"".join(audio_chunks)
 
     async def synthesize_telegram_ogg(self, text: str) -> bytes:
         """Synthesizes Turkish speech and encodes to OGG/Opus for native Telegram voice bubbles."""
