@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#070b14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>VERA — 7/24 Kişisel Otonom Ajan</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <!-- Login Overlay -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card glass">
+      <div class="brand-badge">V</div>
+      <h1>VERA</h1>
+      <p class="muted">7/24 Kişisel Otonom Yapay Zeka Kontrol Paneli</p>
+      <form id="login-form">
+        <input id="login-password" type="password" placeholder="Yönetici parolası" required autocomplete="current-password" />
+        <button type="submit" class="btn-primary">Giriş Yap</button>
+      </form>
+      <div id="login-error" class="error-text"></div>
+    </div>
+  </div>
+
+  <!-- Main App Shell -->
+  <div id="app-shell" class="app-shell hidden">
+    <aside class="sidebar glass">
+      <div class="sidebar-header">
+        <div class="brand-row">
+          <div class="brand-badge small">V</div>
+          <div>
+            <div class="brand-title">VERA</div>
+            <div class="brand-sub"><span class="status-dot"></span> 7/24 Çevrimiçi</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav-list">
+        <button class="nav-item active" data-tab="chat">💬 Sohbet</button>
+        <button class="nav-item" data-tab="voice">🎙️ Canlı Ses</button>
+        <button class="nav-item" data-tab="memory">🧠 Hafıza (Hermes)</button>
+        <button class="nav-item" data-tab="jobs">⏰ 7/24 Görevler</button>
+        <button class="nav-item" data-tab="skills">🧩 Yetenekler</button>
+        <button class="nav-item" data-tab="system">⚙️ Sistem & Google</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div id="mini-ram" class="mini-stat">RAM: --</div>
+        <button id="logout-btn" class="btn-ghost small">Çıkış</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <!-- Pending Approvals Banner -->
+      <div id="approvals-banner" class="approvals-banner hidden"></div>
+
+      <!-- TAB 1: CHAT -->
+      <section id="tab-chat" class="tab-panel active">
+        <header class="panel-header">
+          <div>
+            <h2>VERA ile Sohbet</h2>
+            <p class="muted">Metin yaz, PDF/PPTX/Word/Excel veya görsel yükle — tüm araçlarım hazır.</p>
+          </div>
+          <div class="header-actions">
+            <button id="btn-run-briefing-chat" class="btn-secondary">☀️ Sabah Brifingi</button>
+          </div>
+        </header>
+
+        <div id="chat-messages" class="chat-messages"></div>
+
+        <form id="chat-form" class="chat-composer glass">
+          <label class="file-btn" title="Dosya veya görsel yükle">
+            📎
+            <input id="chat-file" type="file" hidden />
+          </label>
+          <span id="file-chip" class="file-chip hidden"></span>
+          <input id="chat-input" type="text" placeholder="VERA'ya bir görev ver veya bir şey sor..." autocomplete="off" />
+          <button type="submit" class="btn-primary">Gönder</button>
+        </form>
+      </section>
+
+      <!-- TAB 2: LIVE VOICE (GEMINI LIVE) -->
+      <section id="tab-voice" class="tab-panel">
+        <header class="panel-header">
+          <div>
+            <h2>Canlı Sesli Görüşme (Gemini Live)</h2>
+            <p class="muted">Telefonundan tek dokunuşla kesintisiz, söz kesmeli Türkçe sesli konuşma ve anlık araç kullanımı.</p>
+          </div>
+        </header>
+
+        <div class="voice-stage glass">
+          <div id="voice-orb" class="voice-orb">
+            <div class="orb-ring"></div>
+            <div class="orb-core">🎙️</div>
+          </div>
+          <div id="voice-status" class="voice-status">Görüşmeyi başlatmak için aşağıdaki butona dokun</div>
+          <div id="voice-tool-pill" class="tool-pill hidden"></div>
+
+          <div class="voice-controls">
+            <button id="btn-voice-toggle" class="btn-primary large">📞 Canlı Görüşmeyi Başlat</button>
+          </div>
+
+          <div id="voice-transcript" class="voice-transcript"></div>
+        </div>
+      </section>
+
+      <!-- TAB 3: HERMES MEMORY -->
+      <section id="tab-memory" class="tab-panel">
+        <header class="panel-header">
+          <div>
+            <h2>Hermes Çok Katmanlı Hafıza</h2>
+            <p class="muted">VERA'nın seni nasıl tanıdığını canlı incele, düzenle veya gece konsolidasyonunu tetikle.</p>
+          </div>
+          <button id="btn-dream" class="btn-primary">🌙 Dream Konsolidasyonu</button>
+        </header>
+
+        <div class="memory-grid">
+          <div class="card glass">
+            <div class="doc-tabs">
+              <button class="doc-tab active" data-doc="USER.md">USER.md (Sen)</button>
+              <button class="doc-tab" data-doc="MEMORY.md">MEMORY.md</button>
+              <button class="doc-tab" data-doc="SOUL.md">SOUL.md</button>
+            </div>
+            <textarea id="memory-editor" class="code-editor" rows="16"></textarea>
+            <div class="card-footer">
+              <span id="memory-save-status" class="muted"></span>
+              <button id="btn-save-doc" class="btn-primary">Kaydet</button>
+            </div>
+          </div>
+
+          <div class="card glass">
+            <h3>Episodik & Semantik Hafıza Arama</h3>
+            <div class="inline-form">
+              <input id="memory-search-input" type="text" placeholder="Hafızada ara..." />
+              <button id="btn-memory-search" class="btn-secondary">Ara</button>
+            </div>
+            <div id="memory-entries-list" class="list-stack"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: 7/24 JOBS & WATCHERS -->
+      <section id="tab-jobs" class="tab-panel">
+        <header class="panel-header">
+          <div>
+            <h2>7/24 Proaktif Görevler & Web Takipçileri</h2>
+            <p class="muted">Bilgisayarın kapalıyken bile çalışan zamanlanmış brifingler, hatırlatmalar ve fiyat/haber takipçileri.</p>
+          </div>
+        </header>
+
+        <div class="two-col">
+          <div class="card glass">
+            <h3>Zamanlanmış Görevler (Cron / Hatırlatma)</h3>
+            <form id="job-form" class="stack-form">
+              <input id="job-name" type="text" placeholder="Görev adı (örn. Haftalık Özet)" required />
+              <input id="job-cron" type="text" placeholder="Cron (örn. 0 9 * * 1 -> Pzt 09:00)" required />
+              <textarea id="job-prompt" rows="2" placeholder="VERA'ya verilecek otomatik talimat..." required></textarea>
+              <label class="checkbox-row">
+                <input id="job-voice" type="checkbox" /> Sonucu Telegram'dan sesli not olarak da gönder
+              </label>
+              <button type="submit" class="btn-primary">Görev Ekle</button>
+            </form>
+            <div id="jobs-list" class="list-stack"></div>
+          </div>
+
+          <div class="card glass">
+            <h3>7/24 Web / Fiyat / Haber Takipçileri</h3>
+            <form id="watcher-form" class="stack-form">
+              <input id="watch-name" type="text" placeholder="Takip adı (örn. Uçuş/Ürün Fiyatı)" required />
+              <input id="watch-url" type="url" placeholder="https://..." required />
+              <input id="watch-inst" type="text" placeholder="Kural (örn. Fiyat düşerse bildir)" required />
+              <input id="watch-interval" type="number" value="60" min="10" placeholder="Aralık (dk)" />
+              <button type="submit" class="btn-primary">Takipçi Ekle</button>
+            </form>
+            <div id="watchers-list" class="list-stack"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: SKILLS & TOOLS -->
+      <section id="tab-skills" class="tab-panel">
+        <header class="panel-header">
+          <div>
+            <h2>Yetenekler (Skills) & Araç Motoru</h2>
+            <p class="muted">Modüler SKILL.md yetenekleri ve VERA'nın aktif araçları.</p>
+          </div>
+        </header>
+
+        <div class="two-col">
+          <div class="card glass">
+            <h3>Yeni Yetenek (SKILL.md) Ekle</h3>
+            <form id="skill-form" class="stack-form">
+              <input id="skill-slug" type="text" placeholder="Slug (örn. gunluk-finans)" required />
+              <input id="skill-name" type="text" placeholder="Yetenek Adı" required />
+              <input id="skill-desc" type="text" placeholder="Kısa açıklama" required />
+              <textarea id="skill-inst" rows="4" placeholder="Adım adım talimatlar (Markdown)..." required></textarea>
+              <button type="submit" class="btn-primary">Yetenek Oluştur</button>
+            </form>
+            <div id="skills-list" class="list-stack"></div>
+          </div>
+
+          <div class="card glass">
+            <h3>Kayıtlı Araçlar (Tools)</h3>
+            <div id="tools-list" class="list-stack"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: SYSTEM & GOOGLE WORKSPACE -->
+      <section id="tab-system" class="tab-panel">
+        <header class="panel-header">
+          <div>
+            <h2>Sistem Sağlığı, Google Workspace & Loglar</h2>
+            <p class="muted">Google Cloud Always Free (e2-micro) kaynak izleme ve entegrasyon durumu.</p>
+          </div>
+          <button id="btn-refresh-system" class="btn-secondary">🔄 Yenile</button>
+        </header>
+
+        <div class="stats-grid" id="health-cards"></div>
+
+        <div class="two-col" style="margin-top: 1rem;">
+          <div class="card glass">
+            <h3>Entegrasyon Durumu</h3>
+            <div id="integrations-list" class="list-stack"></div>
+            <div style="margin-top: 1rem;">
+              <button id="btn-google-connect" class="btn-primary">🔗 Google Workspace'i Bağla (Gmail/Takvim/Drive)</button>
+            </div>
+          </div>
+
+          <div class="card glass">
+            <h3>Son Denetim Kayıtları (Audit Logs)</h3>
+            <div id="logs-list" class="list-stack compact"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

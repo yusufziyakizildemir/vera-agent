@@ -1,0 +1,41 @@
+# VERA Core Runtime (Optimized for GCP Always Free e2-micro - Low RAM)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+python-multipart>=0.0.12
+python-dotenv>=1.0.1
+PyJWT>=2.9.0
+websockets>=13.1
+
+# Telegram 24/7 Gateway
+python-telegram-bot>=21.7
+
+# AI Brain (Gemini Native + Live API + OpenRouter via httpx)
+google-genai>=1.5.0
+httpx>=0.27.2
+
+# Voice (Free Neural Turkish TTS; STT uses Groq/Gemini via httpx + ffmpeg)
+edge-tts>=6.1.12
+
+# Web Research & Parsing (Ultra-lightweight)
+beautifulsoup4>=4.12.3
+lxml>=5.3.0
+
+# 7/24 Proactive Scheduler
+APScheduler>=3.10.4
+
+# Document Intelligence (PDF, PowerPoint, Word, Excel)
+pypdf>=5.0.0
+python-pptx>=1.0.2
+python-docx>=1.1.2
+openpyxl>=3.1.5
+
+# Google Workspace (Gmail, Calendar, Drive, Sheets, Docs)
+google-auth>=2.35.0
+google-auth-oauthlib>=1.2.1
+google-api-python-client>=2.149.0
+
+# System Health Monitoring & Cloud Persistence (Hugging Face Spaces Private Dataset Sync)
+psutil>=6.1.0
+huggingface-hub>=0.26.0

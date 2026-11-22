@@ -1,0 +1,644 @@
+/* VERA Control Panel PWA + Bidirectional Gemini Live Audio Client */
+
+const state = {
+  token: localStorage.getItem("vera_token") || "",
+  activeDoc: "USER.md",
+  docs: {},
+  selectedFile: null,
+  liveWs: null,
+  liveActive: false,
+  captureCtx: null,
+  playCtx: null,
+  micStream: null,
+  processor: null,
+  nextPlayTime: 0,
+  activeSources: [],
+};
+
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+async function api(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
+  if (!(options.body instanceof FormData) && options.body && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+  const resp = await fetch(path, { ...options, headers });
+  if (resp.status === 401) {
+    logout();
+    throw new Error("Oturum süresi doldu.");
+  }
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || "İstek başarısız.");
+  }
+  const ct = resp.headers.get("content-type") || "";
+  return ct.includes("application/json") ? resp.json() : resp;
+}
+
+function logout() {
+  state.token = "";
+  localStorage.removeItem("vera_token");
+  stopLiveVoice();
+  $("#app-shell").classList.add("hidden");
+  $("#login-screen").classList.remove("hidden");
+}
+
+async function initApp() {
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
+  if (!state.token) {
+    $("#login-screen").classList.remove("hidden");
+    return;
+  }
+  try {
+    await api("/api/system/status");
+    $("#login-screen").classList.add("hidden");
+    $("#app-shell").classList.remove("hidden");
+    await Promise.all([loadChatHistory(), loadApprovals(), loadSystemStatus()]);
+  } catch {
+    logout();
+  }
+}
+
+/* --- Login --- */
+$("#login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#login-error").textContent = "";
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: $("#login-password").value }),
+    });
+    if (!res.ok) throw new Error("Parola hatalı.");
+    const data = await res.json();
+    state.token = data.token;
+    localStorage.setItem("vera_token", state.token);
+    $("#login-password").value = "";
+    await initApp();
+  } catch (err) {
+    $("#login-error").textContent = err.message;
+  }
+});
+
+$("#logout-btn").addEventListener("click", logout);
+
+/* --- Navigation --- */
+$$(".nav-item").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    $$(".nav-item").forEach((b) => b.classList.remove("active"));
+    $$(".tab-panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    $(`#tab-${tab}`).classList.add("active");
+    if (tab === "memory") loadMemoryTab();
+    if (tab === "jobs") loadJobsTab();
+    if (tab === "skills") loadSkillsTab();
+    if (tab === "system") loadSystemStatus();
+  });
+});
+
+/* --- Chat --- */
+function appendMessage(role, content, metaText = "") {
+  const box = $("#chat-messages");
+  const div = document.createElement("div");
+  div.className = `msg ${role}`;
+  div.textContent = content;
+
+  if (role === "assistant") {
+    const meta = document.createElement("div");
+    meta.className = "msg-meta";
+    const span = document.createElement("span");
+    span.textContent = metaText || "VERA";
+    const ttsBtn = document.createElement("button");
+    ttsBtn.className = "tts-btn";
+    ttsBtn.textContent = "🔊 Dinle";
+    ttsBtn.onclick = () => playTTS(content);
+    meta.append(span, ttsBtn);
+    div.appendChild(meta);
+  }
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function playTTS(text) {
+  try {
+    const resp = await api("/api/voice/tts", {
+      method: "POST",
+      body: JSON.stringify({ message: text }),
+    });
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    new Audio(url).play();
+  } catch (err) {
+    alert("Seslendirilemedi: " + err.message);
+  }
+}
+
+async function loadChatHistory() {
+  const data = await api("/api/chat/history?session_id=web_main");
+  const box = $("#chat-messages");
+  box.innerHTML = "";
+  if (!data.messages.length) {
+    appendMessage("assistant", "Merhaba Yusuf! Ben VERA. 7/24 hazırım — nasıl yardımcı olabilirim?");
+    return;
+  }
+  data.messages.forEach((m) => appendMessage(m.role, m.content));
+}
+
+$("#chat-file").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    state.selectedFile = file;
+    $("#file-chip").textContent = file.name;
+    $("#file-chip").classList.remove("hidden");
+  }
+});
+
+$("#chat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#chat-input");
+  const text = input.value.trim();
+  if (!text && !state.selectedFile) return;
+
+  const userDisplay = state.selectedFile ? `[Dosya: ${state.selectedFile.name}] ${text}` : text;
+  appendMessage("user", userDisplay);
+  input.value = "";
+
+  const thinking = document.createElement("div");
+  thinking.className = "msg assistant muted";
+  thinking.textContent = "VERA düşünüyor ve araçları kontrol ediyor...";
+  $("#chat-messages").appendChild(thinking);
+  $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
+
+  try {
+    let data;
+    if (state.selectedFile) {
+      const fd = new FormData();
+      fd.append("file", state.selectedFile);
+      fd.append("message", text || "Bu dosyayı detaylı analiz et ve özetle.");
+      fd.append("session_id", "web_main");
+      data = await api("/api/chat/upload", { method: "POST", body: fd });
+      state.selectedFile = null;
+      $("#chat-file").value = "";
+      $("#file-chip").classList.add("hidden");
+    } else {
+      data = await api("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: text, session_id: "web_main" }),
+      });
+    }
+    thinking.remove();
+    const meta = data.tools_used?.length ? `Araçlar: ${data.tools_used.join(", ")}` : (data.model || "VERA");
+    appendMessage("assistant", data.reply, meta);
+    await loadApprovals();
+  } catch (err) {
+    thinking.textContent = "Hata: " + err.message;
+  }
+});
+
+$("#btn-run-briefing-chat").addEventListener("click", async () => {
+  appendMessage("user", "☀️ Sabah Brifingimi getir");
+  const data = await api("/api/briefing/run", { method: "POST" });
+  appendMessage("assistant", data.briefing, "Sabah Brifingi");
+});
+
+/* --- Approvals --- */
+async function loadApprovals() {
+  const data = await api("/api/approvals?status_filter=pending");
+  const banner = $("#approvals-banner");
+  if (!data.approvals.length) {
+    banner.classList.add("hidden");
+    banner.innerHTML = "";
+    return;
+  }
+  banner.classList.remove("hidden");
+  banner.innerHTML = "<strong>⚠️ Onay Bekleyen Kritik İşlemler</strong>";
+  data.approvals.forEach((ap) => {
+    const row = document.createElement("div");
+    row.className = "approval-row";
+    row.innerHTML = `<span>${ap.summary}</span>`;
+    const actions = document.createElement("div");
+    actions.className = "approval-actions";
+    const okBtn = document.createElement("button");
+    okBtn.className = "btn-success";
+    okBtn.textContent = "✅ Onayla";
+    okBtn.onclick = async () => {
+      const res = await api(`/api/approvals/${ap.id}`, {
+        method: "POST",
+        body: JSON.stringify({ approved: true }),
+      });
+      appendMessage("assistant", `✅ ${res.message}`);
+      loadApprovals();
+    };
+    const noBtn = document.createElement("button");
+    noBtn.className = "btn-danger";
+    noBtn.textContent = "❌ İptal";
+    noBtn.onclick = async () => {
+      await api(`/api/approvals/${ap.id}`, {
+        method: "POST",
+        body: JSON.stringify({ approved: false }),
+      });
+      loadApprovals();
+    };
+    actions.append(okBtn, noBtn);
+    row.appendChild(actions);
+    banner.appendChild(row);
+  });
+}
+
+/* --- LIVE VOICE (GEMINI LIVE WEBSOCKET + 16kHz/24kHz PCM AUDIO) --- */
+function downsampleTo16k(float32, inputRate) {
+  if (inputRate === 16000) return float32;
+  const ratio = inputRate / 16000;
+  const newLen = Math.round(float32.length / ratio);
+  const out = new Float32Array(newLen);
+  for (let i = 0; i < newLen; i++) {
+    out[i] = float32[Math.min(float32.length - 1, Math.round(i * ratio))];
+  }
+  return out;
+}
+
+function floatToPcm16Base64(float32) {
+  const buf = new ArrayBuffer(float32.length * 2);
+  const view = new DataView(buf);
+  for (let i = 0; i < float32.length; i++) {
+    let s = Math.max(-1, Math.min(1, float32[i]));
+    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  let binary = "";
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function playPcm24kBase64(b64) {
+  if (!state.playCtx) state.playCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+  const binary = atob(b64);
+  const len = binary.length / 2;
+  const audioBuf = state.playCtx.createBuffer(1, len, 24000);
+  const channel = audioBuf.getChannelData(0);
+  for (let i = 0; i < len; i++) {
+    const lo = binary.charCodeAt(i * 2);
+    const hi = binary.charCodeAt(i * 2 + 1);
+    let val = (hi << 8) | lo;
+    if (val >= 0x8000) val -= 0x10000;
+    channel[i] = val / 32768.0;
+  }
+  const src = state.playCtx.createBufferSource();
+  src.buffer = audioBuf;
+  src.connect(state.playCtx.destination);
+  const now = state.playCtx.currentTime;
+  const startAt = Math.max(now, state.nextPlayTime);
+  src.start(startAt);
+  state.nextPlayTime = startAt + audioBuf.duration;
+  state.activeSources.push(src);
+  $("#voice-orb").classList.add("speaking");
+  src.onended = () => {
+    state.activeSources = state.activeSources.filter((s) => s !== src);
+    if (!state.activeSources.length) $("#voice-orb").classList.remove("speaking");
+  };
+}
+
+function clearPlaybackQueue() {
+  state.activeSources.forEach((s) => { try { s.stop(); } catch {} });
+  state.activeSources = [];
+  state.nextPlayTime = 0;
+  $("#voice-orb").classList.remove("speaking");
+}
+
+function addVoiceTranscript(role, text) {
+  const el = $("#voice-transcript");
+  const last = el.lastElementChild;
+  if (last && last.dataset.role === role) {
+    last.textContent += text;
+  } else {
+    const p = document.createElement("div");
+    p.dataset.role = role;
+    p.className = role === "user" ? "muted" : "";
+    p.textContent = (role === "user" ? "Sen: " : "VERA: ") + text;
+    el.appendChild(p);
+  }
+  el.scrollTop = el.scrollHeight;
+}
+
+async function startLiveVoice() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${proto}//${location.host}/ws/live?token=${encodeURIComponent(state.token)}`;
+  $("#voice-status").textContent = "VERA Canlı Ses bağlanıyor...";
+  $("#voice-transcript").innerHTML = "";
+
+  try {
+    state.micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch (err) {
+    $("#voice-status").textContent = "Mikrofon izni alınamadı: " + err.message;
+    return;
+  }
+
+  state.liveWs = new WebSocket(wsUrl);
+  state.liveWs.onopen = () => {
+    state.liveActive = true;
+    $("#voice-orb").classList.add("active");
+    $("#btn-voice-toggle").textContent = "🔴 Görüşmeyi Bitir";
+    $("#btn-voice-toggle").className = "btn-danger large";
+
+    state.captureCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = state.captureCtx.createMediaStreamSource(state.micStream);
+    state.processor = state.captureCtx.createScriptProcessor(4096, 1, 1);
+    state.processor.onaudioprocess = (ev) => {
+      if (!state.liveWs || state.liveWs.readyState !== WebSocket.OPEN) return;
+      const input = ev.inputBuffer.getChannelData(0);
+      const pcm16k = downsampleTo16k(input, state.captureCtx.sampleRate);
+      state.liveWs.send(JSON.stringify({ type: "audio", data: floatToPcm16Base64(pcm16k) }));
+    };
+    source.connect(state.processor);
+    state.processor.connect(state.captureCtx.destination);
+  };
+
+  state.liveWs.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "ready") {
+      $("#voice-status").textContent = "VERA seni dinliyor — doğal Türkçe konuşabilirsin";
+    } else if (msg.type === "audio") {
+      playPcm24kBase64(msg.data);
+    } else if (msg.type === "interrupted") {
+      clearPlaybackQueue();
+    } else if (msg.type === "transcript") {
+      addVoiceTranscript(msg.role, msg.text);
+    } else if (msg.type === "tool_event") {
+      const pill = $("#voice-tool-pill");
+      if (msg.status === "running") {
+        pill.textContent = `⚡ Araç çalışıyor: ${msg.name}`;
+        pill.classList.remove("hidden");
+      } else {
+        pill.classList.add("hidden");
+      }
+    } else if (msg.type === "error") {
+      $("#voice-status").textContent = "Hata: " + msg.message;
+      stopLiveVoice(false);
+    }
+  };
+
+  state.liveWs.onclose = () => stopLiveVoice(false);
+}
+
+function stopLiveVoice(resetStatus = true) {
+  state.liveActive = false;
+  clearPlaybackQueue();
+  if (state.liveWs) { try { state.liveWs.close(); } catch {} state.liveWs = null; }
+  if (state.processor) { try { state.processor.disconnect(); } catch {} state.processor = null; }
+  if (state.captureCtx) { try { state.captureCtx.close(); } catch {} state.captureCtx = null; }
+  if (state.micStream) { state.micStream.getTracks().forEach((t) => t.stop()); state.micStream = null; }
+  $("#voice-orb").classList.remove("active", "speaking");
+  $("#voice-tool-pill").classList.add("hidden");
+  $("#btn-voice-toggle").textContent = "📞 Canlı Görüşmeyi Başlat";
+  $("#btn-voice-toggle").className = "btn-primary large";
+  if (resetStatus) $("#voice-status").textContent = "Görüşme sonlandırıldı. Tekrar konuşmak için dokun.";
+}
+
+$("#btn-voice-toggle").addEventListener("click", () => {
+  if (state.liveActive) stopLiveVoice();
+  else startLiveVoice();
+});
+
+/* --- Hermes Memory --- */
+async function loadMemoryTab() {
+  state.docs = await api("/api/memory/docs");
+  $("#memory-editor").value = state.docs[state.activeDoc] || "";
+  await loadMemoryEntries("");
+}
+
+$$(".doc-tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    $$(".doc-tab").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.activeDoc = btn.dataset.doc;
+    $("#memory-editor").value = state.docs[state.activeDoc] || "";
+  });
+});
+
+$("#btn-save-doc").addEventListener("click", async () => {
+  const content = $("#memory-editor").value;
+  await api(`/api/memory/docs/${state.activeDoc}`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  });
+  state.docs[state.activeDoc] = content;
+  $("#memory-save-status").textContent = `${state.activeDoc} kaydedildi!`;
+  setTimeout(() => ($("#memory-save-status").textContent = ""), 2500);
+});
+
+async function loadMemoryEntries(query) {
+  const data = await api(`/api/memory/entries?q=${encodeURIComponent(query)}`);
+  const box = $("#memory-entries-list");
+  box.innerHTML = "";
+  if (!data.items.length) {
+    box.innerHTML = '<div class="muted">Kayıtlı anı bulunamadı.</div>';
+    return;
+  }
+  data.items.forEach((m) => {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.innerHTML = `
+      <div>
+        <div class="list-item-title">${m.content}</div>
+        <div class="list-item-sub">${m.category} • önem:${m.importance} • ${(m.created_at || "").slice(0, 16)}</div>
+      </div>
+    `;
+    const del = document.createElement("button");
+    del.className = "btn-ghost";
+    del.textContent = "🗑️";
+    del.onclick = async () => {
+      await api(`/api/memory/entries/${m.id}`, { method: "DELETE" });
+      loadMemoryEntries($("#memory-search-input").value);
+    };
+    item.appendChild(del);
+    box.appendChild(item);
+  });
+}
+
+$("#btn-memory-search").addEventListener("click", () => loadMemoryEntries($("#memory-search-input").value));
+$("#btn-dream").addEventListener("click", async () => {
+  $("#btn-dream").disabled = true;
+  $("#btn-dream").textContent = "🌙 İşleniyor...";
+  try {
+    const res = await api("/api/memory/dream", { method: "POST" });
+    alert("Dream Konsolidasyonu: " + (res.summary || res.reason || res.status));
+    await loadMemoryTab();
+  } finally {
+    $("#btn-dream").disabled = false;
+    $("#btn-dream").textContent = "🌙 Dream Konsolidasyonu";
+  }
+});
+
+/* --- Jobs & Watchers --- */
+async function loadJobsTab() {
+  const data = await api("/api/jobs");
+  const jBox = $("#jobs-list");
+  jBox.innerHTML = "";
+  data.jobs.forEach((j) => {
+    const el = document.createElement("div");
+    el.className = "list-item";
+    el.innerHTML = `
+      <div>
+        <div class="list-item-title">${j.name} <span class="badge">${j.schedule_expr}</span></div>
+        <div class="list-item-sub">${j.job_type} • Son çalışma: ${j.last_run_at ? j.last_run_at.slice(0, 16) : "Henüz"}</div>
+      </div>
+    `;
+    const del = document.createElement("button");
+    del.className = "btn-ghost";
+    del.textContent = "🗑️";
+    del.onclick = async () => { await api(`/api/jobs/${j.id}`, { method: "DELETE" }); loadJobsTab(); };
+    el.appendChild(del);
+    jBox.appendChild(el);
+  });
+
+  const wBox = $("#watchers-list");
+  wBox.innerHTML = "";
+  data.watchers.forEach((w) => {
+    const el = document.createElement("div");
+    el.className = "list-item";
+    el.innerHTML = `
+      <div>
+        <div class="list-item-title">${w.name} <span class="badge">${w.interval_minutes} dk</span></div>
+        <div class="list-item-sub">${w.url}<br/>${w.instruction}</div>
+      </div>
+    `;
+    const del = document.createElement("button");
+    del.className = "btn-ghost";
+    del.textContent = "🗑️";
+    del.onclick = async () => { await api(`/api/watchers/${w.id}`, { method: "DELETE" }); loadJobsTab(); };
+    el.appendChild(del);
+    wBox.appendChild(el);
+  });
+}
+
+$("#job-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await api("/api/jobs", {
+    method: "POST",
+    body: JSON.stringify({
+      name: $("#job-name").value,
+      job_type: "agent_cron",
+      schedule_expr: $("#job-cron").value,
+      prompt: $("#job-prompt").value,
+      send_voice: $("#job-voice").checked,
+    }),
+  });
+  e.target.reset();
+  loadJobsTab();
+});
+
+$("#watcher-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await api("/api/watchers", {
+    method: "POST",
+    body: JSON.stringify({
+      name: $("#watch-name").value,
+      url: $("#watch-url").value,
+      instruction: $("#watch-inst").value,
+      interval_minutes: Number($("#watch-interval").value || 60),
+    }),
+  });
+  e.target.reset();
+  loadJobsTab();
+});
+
+/* --- Skills & Tools --- */
+async function loadSkillsTab() {
+  const data = await api("/api/skills");
+  const sBox = $("#skills-list");
+  sBox.innerHTML = "";
+  data.skills.forEach((s) => {
+    const el = document.createElement("div");
+    el.className = "list-item";
+    el.innerHTML = `<div><div class="list-item-title">${s.name} <span class="badge">${s.slug}</span></div><div class="list-item-sub">${s.description}</div></div>`;
+    sBox.appendChild(el);
+  });
+
+  const tBox = $("#tools-list");
+  tBox.innerHTML = "";
+  data.tools.forEach((t) => {
+    const el = document.createElement("div");
+    el.className = "list-item";
+    el.innerHTML = `
+      <div>
+        <div class="list-item-title">${t.name} <span class="badge">${t.category}</span> ${t.requires_approval ? '<span class="badge warn">Onaylı</span>' : ""}</div>
+        <div class="list-item-sub">${t.description}</div>
+      </div>
+    `;
+    const toggle = document.createElement("button");
+    toggle.className = t.enabled ? "btn-success" : "btn-ghost";
+    toggle.textContent = t.enabled ? "Aktif" : "Kapalı";
+    toggle.onclick = async () => {
+      await api(`/api/tools/${t.name}/toggle?enabled=${!t.enabled}`, { method: "POST" });
+      loadSkillsTab();
+    };
+    el.appendChild(toggle);
+    tBox.appendChild(el);
+  });
+}
+
+$("#skill-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await api("/api/skills", {
+    method: "POST",
+    body: JSON.stringify({
+      slug: $("#skill-slug").value,
+      name: $("#skill-name").value,
+      description: $("#skill-desc").value,
+      instructions: $("#skill-inst").value,
+    }),
+  });
+  e.target.reset();
+  loadSkillsTab();
+});
+
+/* --- System & Google Workspace --- */
+async function loadSystemStatus() {
+  const [st, logData] = await Promise.all([api("/api/system/status"), api("/api/logs?limit=25")]);
+  const h = st.health;
+  $("#mini-ram").textContent = `RAM: ${Math.round(h.ram_used_mb)}/${Math.round(h.ram_total_mb)} MB`;
+
+  $("#health-cards").innerHTML = `
+    <div class="stat-card glass"><div class="stat-label">CPU</div><div class="stat-value">%${h.cpu_percent}</div><div class="progress-bar"><div class="progress-fill" style="width:${h.cpu_percent}%"></div></div></div>
+    <div class="stat-card glass"><div class="stat-label">RAM</div><div class="stat-value">${Math.round(h.ram_used_mb)} MB</div><div class="muted">/ ${Math.round(h.ram_total_mb)} MB (%${h.ram_percent})</div><div class="progress-bar"><div class="progress-fill" style="width:${h.ram_percent}%"></div></div></div>
+    <div class="stat-card glass"><div class="stat-label">Swap</div><div class="stat-value">${Math.round(h.swap_used_mb)} MB</div><div class="muted">/ ${Math.round(h.swap_total_mb)} MB</div></div>
+    <div class="stat-card glass"><div class="stat-label">Disk</div><div class="stat-value">${h.disk_used_gb} GB</div><div class="muted">/ ${h.disk_total_gb} GB (%${h.disk_percent})</div></div>
+    <div class="stat-card glass"><div class="stat-label">Hafıza & Mesaj</div><div class="stat-value">${st.stats.memories_count} / ${st.stats.messages_count}</div><div class="muted">Aktif görev: ${st.stats.active_jobs_count}</div></div>
+  `;
+
+  const integ = st.integrations;
+  const rows = [
+    ["Telegram 7/24 Bot", integ.telegram_running],
+    ["Google Gemini Beyin & Canlı Ses", integ.gemini_configured],
+    ["Groq Whisper Türkçe Ses", integ.groq_configured],
+    ["OpenRouter Yedek Model", integ.openrouter_configured],
+    ["Google Workspace (Gmail/Takvim/Drive)", integ.google_connected],
+    [`Bulut Hafıza Yedeği (${integ.cloud_backup_status || "-"})`, integ.cloud_backup_enabled],
+  ];
+  $("#integrations-list").innerHTML = rows
+    .map(([label, ok]) => `<div class="list-item"><span class="list-item-title">${label}</span><span class="badge ${ok ? "ok" : "warn"}">${ok ? "Bağlı" : "Yapılandırılmadı"}</span></div>`)
+    .join("");
+
+  $("#logs-list").innerHTML = logData.logs
+    .map((l) => `<div class="list-item"><div><div class="list-item-title">${l.event_type}</div><div class="list-item-sub">${l.detail}</div></div><span class="muted">${(l.created_at || "").slice(11, 19)}</span></div>`)
+    .join("");
+}
+
+$("#btn-refresh-system").addEventListener("click", loadSystemStatus);
+$("#btn-google-connect").addEventListener("click", async () => {
+  try {
+    const res = await api("/api/google/connect");
+    window.location.href = res.auth_url;
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+initApp();
