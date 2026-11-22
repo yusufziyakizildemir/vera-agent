@@ -57,6 +57,14 @@ class VeraScheduler:
                 replace_existing=True,
             )
 
+        # 7/24 Self Keep-Alive Ping every 10 minutes (prevents Render 15-min idle sleep)
+        self.scheduler.add_job(
+            self._run_keepalive_ping,
+            trigger=IntervalTrigger(minutes=10),
+            id="system_keepalive_ping",
+            replace_existing=True,
+        )
+
         self.scheduler.start()
         self._started = True
         logger.info("VERA 7/24 proaktif zamanlayıcı başlatıldı (%s).", self.agent.settings.timezone)
@@ -195,6 +203,18 @@ class VeraScheduler:
 
     async def _run_cloud_backup(self) -> None:
         await self.agent.cloud_sync.backup_async()
+
+    async def _run_keepalive_ping(self) -> None:
+        base = (self.agent.settings.public_base_url or "").rstrip("/")
+        if not base.startswith("https://"):
+            return
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.get(f"{base}/api/ping")
+        except Exception as exc:
+            logger.debug("Keepalive ping atlandı: %s", exc)
 
     async def _check_web_watchers(self) -> None:
         watchers = self.agent.db.list_web_watchers(only_enabled=True)

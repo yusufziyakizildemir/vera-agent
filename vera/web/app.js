@@ -206,6 +206,55 @@ $("#btn-run-briefing-chat").addEventListener("click", async () => {
   appendMessage("assistant", data.briefing, "Sabah Brifingi");
 });
 
+/* --- Chat Voice Command Button (🎙️) --- */
+let chatRec = null;
+$("#btn-chat-mic").addEventListener("click", () => {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    alert("Tarayıcınız doğrudan ses tanımayı desteklemiyor; Canlı Ses sekmesini kullanabilirsiniz.");
+    return;
+  }
+  if (chatRec) {
+    try { chatRec.stop(); } catch {}
+    chatRec = null;
+    $("#btn-chat-mic").textContent = "🎙️";
+    return;
+  }
+  chatRec = new SpeechRec();
+  chatRec.lang = "tr-TR";
+  chatRec.interimResults = false;
+  $("#btn-chat-mic").textContent = "🔴";
+  chatRec.onresult = async (ev) => {
+    const spoken = ev.results[0][0].transcript.trim();
+    $("#btn-chat-mic").textContent = "🎙️";
+    chatRec = null;
+    if (!spoken) return;
+    $("#chat-input").value = spoken;
+    appendMessage("user", `🎙️ ${spoken}`);
+    $("#chat-input").value = "";
+    const thinking = document.createElement("div");
+    thinking.className = "msg assistant muted";
+    thinking.textContent = "VERA sesli komutunu işliyor...";
+    $("#chat-messages").appendChild(thinking);
+    try {
+      const data = await api("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: spoken, session_id: "web_main" }),
+      });
+      thinking.remove();
+      const meta = data.tools_used?.length ? `Araçlar: ${data.tools_used.join(", ")}` : (data.model || "VERA");
+      appendMessage("assistant", data.reply, meta);
+      playTTS(data.reply);
+      await loadApprovals();
+    } catch (err) {
+      thinking.textContent = "Hata: " + err.message;
+    }
+  };
+  chatRec.onerror = () => { $("#btn-chat-mic").textContent = "🎙️"; chatRec = null; };
+  chatRec.onend = () => { $("#btn-chat-mic").textContent = "🎙️"; chatRec = null; };
+  chatRec.start();
+});
+
 /* --- Approvals --- */
 async function loadApprovals() {
   const data = await api("/api/approvals?status_filter=pending");
@@ -326,70 +375,84 @@ function addVoiceTranscript(role, text) {
 }
 
 async function startLiveVoice() {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${proto}//${location.host}/ws/live?token=${encodeURIComponent(state.token)}`;
-  $("#voice-status").textContent = "VERA Canlı Ses bağlanıyor...";
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   $("#voice-transcript").innerHTML = "";
+  state.liveActive = true;
+  $("#voice-orb").classList.add("active");
+  $("#btn-voice-toggle").textContent = "🔴 Görüşmeyi Bitir";
+  $("#btn-voice-toggle").className = "btn-danger large";
 
-  try {
-    state.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-  } catch (err) {
-    $("#voice-status").textContent = "Mikrofon izni alınamadı: " + err.message;
+  if (SpeechRec) {
+    const listenTurn = () => {
+      if (!state.liveActive) return;
+      $("#voice-status").textContent = "🎙️ VERA seni dinliyor — doğal Türkçe konuşabilirsin";
+      const rec = new SpeechRec();
+      state.liveRec = rec;
+      rec.lang = "tr-TR";
+      rec.interimResults = false;
+      rec.onresult = async (ev) => {
+        const text = ev.results[0][0].transcript.trim();
+        if (!text || !state.liveActive) return;
+        addVoiceTranscript("user", text);
+        $("#voice-status").textContent = "⚡ VERA düşünüyor ve araçları çalıştırıyor...";
+        try {
+          const data = await api("/api/chat", {
+            method: "POST",
+            body: JSON.stringify({ message: text, session_id: "live_voice" }),
+          });
+          if (!state.liveActive) return;
+          if (data.tools_used?.length) {
+            const pill = $("#voice-tool-pill");
+            pill.textContent = `⚡ Kullanılan araçlar: ${data.tools_used.join(", ")}`;
+            pill.classList.remove("hidden");
+          }
+          addVoiceTranscript("assistant", data.reply);
+          $("#voice-status").textContent = "🔊 VERA konuşuyor...";
+          $("#voice-orb").classList.add("speaking");
+          const resp = await api("/api/voice/tts", {
+            method: "POST",
+            body: JSON.stringify({ message: data.reply }),
+          });
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          state.liveAudio = audio;
+          audio.onended = () => {
+            $("#voice-orb").classList.remove("speaking");
+            if (state.liveActive) listenTurn();
+          };
+          audio.onerror = () => {
+            $("#voice-orb").classList.remove("speaking");
+            if (state.liveActive) listenTurn();
+          };
+          await audio.play();
+        } catch (err) {
+          $("#voice-status").textContent = "Hata: " + err.message;
+          if (state.liveActive) setTimeout(listenTurn, 1500);
+        }
+      };
+      rec.onerror = (ev) => {
+        if (state.liveActive && ev.error !== "aborted") setTimeout(listenTurn, 800);
+      };
+      rec.onend = () => {
+        if (state.liveActive && !$("#voice-orb").classList.contains("speaking") && $("#voice-status").textContent.includes("dinliyor")) {
+          try { rec.start(); } catch {}
+        }
+      };
+      try { rec.start(); } catch {}
+    };
+    listenTurn();
     return;
   }
 
-  state.liveWs = new WebSocket(wsUrl);
-  state.liveWs.onopen = () => {
-    state.liveActive = true;
-    $("#voice-orb").classList.add("active");
-    $("#btn-voice-toggle").textContent = "🔴 Görüşmeyi Bitir";
-    $("#btn-voice-toggle").className = "btn-danger large";
-
-    state.captureCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = state.captureCtx.createMediaStreamSource(state.micStream);
-    state.processor = state.captureCtx.createScriptProcessor(4096, 1, 1);
-    state.processor.onaudioprocess = (ev) => {
-      if (!state.liveWs || state.liveWs.readyState !== WebSocket.OPEN) return;
-      const input = ev.inputBuffer.getChannelData(0);
-      const pcm16k = downsampleTo16k(input, state.captureCtx.sampleRate);
-      state.liveWs.send(JSON.stringify({ type: "audio", data: floatToPcm16Base64(pcm16k) }));
-    };
-    source.connect(state.processor);
-    state.processor.connect(state.captureCtx.destination);
-  };
-
-  state.liveWs.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === "ready") {
-      $("#voice-status").textContent = "VERA seni dinliyor — doğal Türkçe konuşabilirsin";
-    } else if (msg.type === "audio") {
-      playPcm24kBase64(msg.data);
-    } else if (msg.type === "interrupted") {
-      clearPlaybackQueue();
-    } else if (msg.type === "transcript") {
-      addVoiceTranscript(msg.role, msg.text);
-    } else if (msg.type === "tool_event") {
-      const pill = $("#voice-tool-pill");
-      if (msg.status === "running") {
-        pill.textContent = `⚡ Araç çalışıyor: ${msg.name}`;
-        pill.classList.remove("hidden");
-      } else {
-        pill.classList.add("hidden");
-      }
-    } else if (msg.type === "error") {
-      $("#voice-status").textContent = "Hata: " + msg.message;
-      stopLiveVoice(false);
-    }
-  };
-
-  state.liveWs.onclose = () => stopLiveVoice(false);
+  $("#voice-status").textContent = "Tarayıcı ses tanıma desteklemiyor; lütfen Chrome veya Edge kullanın.";
 }
 
 function stopLiveVoice(resetStatus = true) {
   state.liveActive = false;
   clearPlaybackQueue();
+  if (state.liveRec) { try { state.liveRec.abort(); } catch {} state.liveRec = null; }
+  if (state.liveAudio) { try { state.liveAudio.pause(); } catch {} state.liveAudio = null; }
   if (state.liveWs) { try { state.liveWs.close(); } catch {} state.liveWs = null; }
   if (state.processor) { try { state.processor.disconnect(); } catch {} state.processor = null; }
   if (state.captureCtx) { try { state.captureCtx.close(); } catch {} state.captureCtx = null; }

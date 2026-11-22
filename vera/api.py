@@ -209,6 +209,28 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
         mp3 = await agent.voice.synthesize_mp3(body.message)
         return Response(content=mp3, media_type="audio/mpeg")
 
+    @app.post("/api/voice/converse")
+    async def voice_converse(
+        file: UploadFile = File(...),
+        session_id: str = Form(default="live_voice"),
+        _=Depends(require_auth),
+    ) -> dict[str, Any]:
+        raw = await file.read()
+        mime = file.content_type or "audio/webm"
+        fname = file.filename or "speech.webm"
+        transcript = await agent.voice.transcribe(raw, filename=fname, mime_type=mime)
+        if not transcript.strip():
+            return {"transcript": "", "reply": "", "tools_used": []}
+        reply = await agent.handle_message(
+            user_text=transcript, session_id=session_id, channel="live_voice"
+        )
+        return {
+            "transcript": transcript,
+            "reply": reply.text,
+            "tools_used": reply.tools_used,
+            "model": reply.model,
+        }
+
     # --- Gemini Live Real-Time Bidirectional Voice WebSocket ---
     @app.websocket("/ws/live")
     async def ws_live_voice(websocket: WebSocket, token: str = Query(default="")) -> None:
