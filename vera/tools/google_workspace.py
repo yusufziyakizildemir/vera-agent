@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
@@ -36,6 +37,11 @@ def _client_config(settings: Settings) -> dict[str, Any]:
     }
 
 
+def _deterministic_pkce_verifier(settings: Settings) -> str:
+    """Stateless PKCE code_verifier derived from JWT secret so multi-request OAuth never loses it."""
+    return hashlib.sha256(f"vera-google-pkce-{settings.jwt_secret}".encode("utf-8")).hexdigest()
+
+
 def get_google_auth_url(settings: Settings) -> str:
     if not settings.google_client_id or not settings.google_client_secret:
         raise ValueError("GOOGLE_CLIENT_ID ve GOOGLE_CLIENT_SECRET .env dosyasında tanımlı değil.")
@@ -46,7 +52,9 @@ def get_google_auth_url(settings: Settings) -> str:
         _client_config(settings),
         scopes=GOOGLE_SCOPES,
         redirect_uri=redirect_uri,
+        autogenerate_code_verifier=False,
     )
+    flow.code_verifier = _deterministic_pkce_verifier(settings)
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
@@ -63,7 +71,9 @@ def exchange_google_code(settings: Settings, code: str) -> None:
         _client_config(settings),
         scopes=GOOGLE_SCOPES,
         redirect_uri=redirect_uri,
+        autogenerate_code_verifier=False,
     )
+    flow.code_verifier = _deterministic_pkce_verifier(settings)
     flow.fetch_token(code=code)
     creds = flow.credentials
     settings.google_token_path.parent.mkdir(parents=True, exist_ok=True)

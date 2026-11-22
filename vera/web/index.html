@@ -54,6 +54,26 @@
     </aside>
 
     <main class="main-content">
+      <!-- J.A.R.V.I.S. Holographic Top Telemetry HUD -->
+      <div class="jarvis-hud-bar glass">
+        <div class="hud-left">
+          <div class="arc-reactor-mini"></div>
+          <div>
+            <div class="hud-title">V.E.R.A. // J.A.R.V.I.S. OS v2.0</div>
+            <div class="hud-sub" id="hud-clock">SİSTEM AKTİF • İSTANBUL</div>
+          </div>
+        </div>
+        <div class="hud-telemetry">
+          <span class="hud-pill" id="hud-cpu">CPU: --%</span>
+          <span class="hud-pill" id="hud-ram">RAM: --</span>
+          <span class="hud-pill" id="hud-google">GOOGLE: --</span>
+        </div>
+        <div class="hud-controls">
+          <button type="button" id="btn-hud-autovoice" class="hud-btn active" title="Her yanıtı otomatik seslendir">🔊 Oto-Ses: AÇIK</button>
+          <button type="button" id="btn-hud-voice-select" class="hud-btn" title="Ses karakterini değiştir">🗣️ Ses: JARVIS</button>
+        </div>
+      </div>
+
       <!-- Pending Approvals Banner -->
       <div id="approvals-banner" class="approvals-banner hidden"></div>
 
@@ -61,13 +81,21 @@
       <section id="tab-chat" class="tab-panel active">
         <header class="panel-header">
           <div>
-            <h2>VERA ile Sohbet</h2>
-            <p class="muted">Metin yaz, PDF/PPTX/Word/Excel veya görsel yükle — tüm araçlarım hazır.</p>
+            <h2>J.A.R.V.I.S. Taktiksel Komuta Merkezi</h2>
+            <p class="muted">Sesli veya yazılı emir verin Efendim — Gmail, Takvim, Drive, Web Takip ve tüm sistem araçları emrinizde.</p>
           </div>
           <div class="header-actions">
-            <button id="btn-run-briefing-chat" class="btn-secondary">☀️ Sabah Brifingi</button>
+            <button id="btn-run-briefing-chat" class="btn-secondary">⚡ Taktiksel Brifing</button>
           </div>
         </header>
+
+        <div class="tactical-chips">
+          <button type="button" class="tactical-chip" data-cmd="Gmail gelen kutumdaki son okunmamış önemli e-postaları kontrol et ve taktiksel özet çıkar.">📧 E-postalarımı Kontrol Et</button>
+          <button type="button" class="tactical-chip" data-cmd="Google Takvim'deki bugünkü ve bu haftaki toplantılarımı kontrol et.">📅 Takvim & Ajandam</button>
+          <button type="button" class="tactical-chip" data-cmd="Tam taktiksel sabah brifingi hazırla: hava durumu, takvim, önemli mailler ve sistem durumu.">⚡ Tam Durum Raporu</button>
+          <button type="button" class="tactical-chip" data-cmd="Sunucu CPU, RAM, Disk ve aktif görev telemetrisini raporla.">🖥️ Sistem Telemetrisi</button>
+          <button type="button" class="tactical-chip" data-cmd="Türkiye ve dünya teknoloji/ekonomi gündemindeki en kritik başlıkları araştır ve özetle.">🌐 Gündem Tarama</button>
+        </div>
 
         <div id="chat-messages" class="chat-messages"></div>
 

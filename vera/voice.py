@@ -64,7 +64,7 @@ class VoiceEngine:
         # Fallback to Gemini native audio understanding
         return await self.llm.transcribe_with_gemini(audio_bytes=audio_bytes, mime_type=mime_type)
 
-    async def synthesize_mp3(self, text: str) -> bytes:
+    async def synthesize_mp3(self, text: str, voice: str | None = None) -> bytes:
         """Synthesizes natural Turkish MP3 audio via free Microsoft Edge-TTS."""
         import edge_tts
 
@@ -75,8 +75,9 @@ class VoiceEngine:
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
             mp3_path = Path(tmp.name)
 
+        selected_voice = (voice or self.settings.tts_voice or "tr-TR-AhmetNeural").strip()
         try:
-            communicate = edge_tts.Communicate(speech_text, voice=self.settings.tts_voice)
+            communicate = edge_tts.Communicate(speech_text, voice=selected_voice)
             await communicate.save(str(mp3_path))
             return mp3_path.read_bytes()
         finally:

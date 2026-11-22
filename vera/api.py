@@ -53,6 +53,7 @@ class LoginRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "web_main"
+    voice: str | None = None
 
 
 class MemoryDocUpdate(BaseModel):
@@ -206,7 +207,7 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
 
     @app.post("/api/voice/tts")
     async def voice_tts(body: ChatRequest, _=Depends(require_auth)) -> Response:
-        mp3 = await agent.voice.synthesize_mp3(body.message)
+        mp3 = await agent.voice.synthesize_mp3(body.message, voice=body.voice)
         return Response(content=mp3, media_type="audio/mpeg")
 
     @app.post("/api/voice/converse")
@@ -388,6 +389,8 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
         try:
             exchange_google_code(cfg, code)
             agent.db.log_event("google_oauth", "Google Workspace başarıyla bağlandı.")
+            if agent.cloud_sync.enabled:
+                await agent.cloud_sync.backup_async()
             return RedirectResponse(url="/?google=connected")
         except Exception as exc:
             return HTMLResponse(f"<h3>Google bağlantı hatası: {exc}</h3>", status_code=400)

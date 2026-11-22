@@ -13,6 +13,9 @@ const state = {
   processor: null,
   nextPlayTime: 0,
   activeSources: [],
+  autoVoice: localStorage.getItem("vera_autovoice") !== "false",
+  ttsVoice: localStorage.getItem("vera_tts_voice") || "tr-TR-AhmetNeural",
+  currentAudio: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -126,24 +129,80 @@ function appendMessage(role, content, metaText = "") {
 
 async function playTTS(text) {
   try {
+    if (state.currentAudio) {
+      try { state.currentAudio.pause(); } catch {}
+      state.currentAudio = null;
+    }
     const resp = await api("/api/voice/tts", {
       method: "POST",
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, voice: state.ttsVoice }),
     });
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
-    new Audio(url).play();
+    const audio = new Audio(url);
+    state.currentAudio = audio;
+    await audio.play();
   } catch (err) {
-    alert("Seslendirilemedi: " + err.message);
+    console.warn("Seslendirilemedi:", err.message);
   }
 }
 
+function updateHudControls() {
+  const avBtn = $("#btn-hud-autovoice");
+  if (avBtn) {
+    avBtn.textContent = state.autoVoice ? "🔊 Oto-Ses: AÇIK" : "🔇 Oto-Ses: KAPALI";
+    avBtn.classList.toggle("active", state.autoVoice);
+  }
+  const vsBtn = $("#btn-hud-voice-select");
+  if (vsBtn) {
+    const isJarvis = state.ttsVoice.includes("Ahmet");
+    vsBtn.textContent = isJarvis ? "🗣️ Ses: JARVIS (Erkek)" : "🗣️ Ses: VERA (Kadın)";
+  }
+}
+
+$("#btn-hud-autovoice")?.addEventListener("click", () => {
+  state.autoVoice = !state.autoVoice;
+  localStorage.setItem("vera_autovoice", String(state.autoVoice));
+  if (!state.autoVoice && state.currentAudio) {
+    try { state.currentAudio.pause(); } catch {}
+  }
+  updateHudControls();
+});
+
+$("#btn-hud-voice-select")?.addEventListener("click", () => {
+  state.ttsVoice = state.ttsVoice.includes("Ahmet") ? "tr-TR-EmelNeural" : "tr-TR-AhmetNeural";
+  localStorage.setItem("vera_tts_voice", state.ttsVoice);
+  updateHudControls();
+});
+
+setInterval(() => {
+  const el = $("#hud-clock");
+  if (el) {
+    const now = new Date().toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul" });
+    el.textContent = `SİSTEM AKTİF • İSTANBUL ${now}`;
+  }
+}, 1000);
+
+$$(".tactical-chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    const cmd = chip.dataset.cmd;
+    if (!cmd) return;
+    $("#chat-input").value = cmd;
+    $("#chat-form").requestSubmit();
+  });
+});
+
 async function loadChatHistory() {
+  updateHudControls();
   const data = await api("/api/chat/history?session_id=web_main");
   const box = $("#chat-messages");
   box.innerHTML = "";
+  if (location.search.includes("google=connected")) {
+    appendMessage("assistant", "✅ Google Workspace (Gmail, Takvim, Drive, Sheets, Docs) bağlantısı başarıyla doğrulandı ve kalıcı bulut hafızasına kaydedildi, Yusuf Bey. Emrinizdeyim!");
+    history.replaceState({}, "", "/");
+  }
   if (!data.messages.length) {
-    appendMessage("assistant", "Merhaba Yusuf! Ben VERA. 7/24 hazırım — nasıl yardımcı olabilirim?");
+    appendMessage("assistant", "Sistemler çevrimiçi, Yusuf Bey. V.E.R.A. // J.A.R.V.I.S. Taktiksel Komuta Merkezi 7/24 emrinizde.");
     return;
   }
   data.messages.forEach((m) => appendMessage(m.role, m.content));
@@ -194,6 +253,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
     thinking.remove();
     const meta = data.tools_used?.length ? `Araçlar: ${data.tools_used.join(", ")}` : (data.model || "VERA");
     appendMessage("assistant", data.reply, meta);
+    if (state.autoVoice) playTTS(data.reply);
     await loadApprovals();
   } catch (err) {
     thinking.textContent = "Hata: " + err.message;
@@ -667,6 +727,11 @@ async function loadSystemStatus() {
   const [st, logData] = await Promise.all([api("/api/system/status"), api("/api/logs?limit=25")]);
   const h = st.health;
   $("#mini-ram").textContent = `RAM: ${Math.round(h.ram_used_mb)}/${Math.round(h.ram_total_mb)} MB`;
+  if ($("#hud-cpu")) $("#hud-cpu").textContent = `CPU: %${h.cpu_percent}`;
+  if ($("#hud-ram")) $("#hud-ram").textContent = `RAM: %${h.ram_percent}`;
+  if ($("#hud-google")) {
+    $("#hud-google").textContent = st.integrations.google_connected ? "GOOGLE: BAĞLI 🟢" : "GOOGLE: BEKLİYOR 🟡";
+  }
 
   $("#health-cards").innerHTML = `
     <div class="stat-card glass"><div class="stat-label">CPU</div><div class="stat-value">%${h.cpu_percent}</div><div class="progress-bar"><div class="progress-fill" style="width:${h.cpu_percent}%"></div></div></div>
