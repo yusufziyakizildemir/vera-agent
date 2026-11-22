@@ -69,9 +69,16 @@
           <span class="hud-pill" id="hud-google">GOOGLE: --</span>
         </div>
         <div class="hud-controls">
+          <button type="button" id="btn-hud-wakeword" class="hud-btn active" title="Hey Vera deyince uyan ve komut bekle">📡 "Hey Vera": AÇIK</button>
           <button type="button" id="btn-hud-autovoice" class="hud-btn active" title="Her yanıtı otomatik seslendir">🔊 Oto-Ses: AÇIK</button>
           <button type="button" id="btn-hud-voice-select" class="hud-btn" title="Ses karakterini değiştir">🗣️ Ses: JARVIS</button>
         </div>
+      </div>
+
+      <!-- J.A.R.V.I.S. Wake-Word Radar Status Strip -->
+      <div id="wake-status-banner" class="wake-status-banner glass">
+        <span class="wake-dot" id="wake-dot"></span>
+        <span id="wake-status-text">🟢 "Hey Vera" nöbeti hazır — Mikrofonu etkinleştirmek için ekrana bir kez dokunun veya "Hey Vera" deyin.</span>
       </div>
 
       <!-- Pending Approvals Banner -->

@@ -16,6 +16,12 @@ const state = {
   autoVoice: localStorage.getItem("vera_autovoice") !== "false",
   ttsVoice: localStorage.getItem("vera_tts_voice") || "tr-TR-AhmetNeural",
   currentAudio: null,
+  wakeEnabled: localStorage.getItem("vera_wake_enabled") !== "false",
+  wakeAwake: false,
+  wakeBusy: false,
+  wakeSpeaking: false,
+  wakeRec: null,
+  wakeTimer: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -127,12 +133,17 @@ function appendMessage(role, content, metaText = "") {
   box.scrollTop = box.scrollHeight;
 }
 
-async function playTTS(text) {
+async function playTTS(text, onDone = null) {
   try {
     if (state.currentAudio) {
       try { state.currentAudio.pause(); } catch {}
       state.currentAudio = null;
     }
+    state.wakeSpeaking = true;
+    if (state.wakeRec) {
+      try { state.wakeRec.abort(); } catch {}
+    }
+    setWakeBannerState("speaking", "🔊 VERA konuşuyor... (Sözünü kesip yeni komut vermek için buraya dokunun)");
     const resp = await api("/api/voice/tts", {
       method: "POST",
       body: JSON.stringify({ message: text, voice: state.ttsVoice }),
@@ -141,13 +152,188 @@ async function playTTS(text) {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     state.currentAudio = audio;
+    const finish = () => {
+      state.wakeSpeaking = false;
+      state.currentAudio = null;
+      if (state.wakeAwake) {
+        setWakeBannerState("awake", "🎙️ VERA DİNLİYOR — Buyurun Yusuf Bey, komutunuzu söyleyin...");
+        armWakeSleepTimer(30000);
+      } else if (state.wakeEnabled) {
+        setWakeBannerState("standby", '🟢 "Hey Vera" nöbeti aktif — "Hey Vera" diyerek seslenebilirsiniz.');
+      }
+      ensureWakeRecognizerRunning();
+      if (onDone) onDone();
+    };
+    audio.onended = finish;
+    audio.onerror = finish;
     await audio.play();
   } catch (err) {
+    state.wakeSpeaking = false;
+    ensureWakeRecognizerRunning();
+    if (onDone) onDone();
     console.warn("Seslendirilemedi:", err.message);
   }
 }
 
+function playJarvisChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ctx.currentTime;
+    [587.33, 880.0].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now + i * 0.09);
+      gain.gain.setValueAtTime(0.14, now + i * 0.09);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.16);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + i * 0.09);
+      osc.stop(now + i * 0.09 + 0.17);
+    });
+  } catch {}
+}
+
+function setWakeBannerState(mode, text) {
+  const banner = $("#wake-status-banner");
+  const txt = $("#wake-status-text");
+  if (!banner || !txt) return;
+  banner.classList.remove("awake", "speaking");
+  if (mode === "awake") banner.classList.add("awake");
+  if (mode === "speaking") banner.classList.add("speaking");
+  txt.textContent = text;
+}
+
+function armWakeSleepTimer(ms = 30000) {
+  if (state.wakeTimer) clearTimeout(state.wakeTimer);
+  state.wakeTimer = setTimeout(() => {
+    if (state.wakeAwake && !state.wakeSpeaking && !state.wakeBusy) {
+      state.wakeAwake = false;
+      setWakeBannerState("standby", '🟢 "Hey Vera" nöbet moduna döndü — "Hey Vera" diyerek uyandırabilirsiniz.');
+    }
+  }, ms);
+}
+
+async function executeWakeVoiceCommand(commandText) {
+  const cleanCmd = commandText.trim();
+  if (!cleanCmd) return;
+
+  // Check if user told VERA to go back to standby
+  if (/^(teşekkürler|teşekkür ederim|tamamdır|beklemeye geç|uyku modu|kapat|görüşürüz)\b/i.test(cleanCmd)) {
+    state.wakeAwake = false;
+    if (state.wakeTimer) clearTimeout(state.wakeTimer);
+    const bye = "Rica ederim Yusuf Bey, nöbet moduna geçiyorum. İhtiyacınız olduğunda Hey Vera demeniz yeterli.";
+    appendMessage("assistant", bye, "J.A.R.V.I.S. Nöbet Modu");
+    await playTTS(bye);
+    return;
+  }
+
+  state.wakeBusy = true;
+  setWakeBannerState("awake", `⚡ Emir işleniyor: "${cleanCmd}"`);
+  appendMessage("user", `🎙️ ${cleanCmd}`);
+
+  const thinking = document.createElement("div");
+  thinking.className = "msg assistant muted";
+  thinking.textContent = "J.A.R.V.I.S. emrinizi icra ediyor...";
+  $("#chat-messages").appendChild(thinking);
+  $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
+
+  try {
+    const data = await api("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: cleanCmd, session_id: "web_main" }),
+    });
+    thinking.remove();
+    const meta = data.tools_used?.length ? `Araçlar: ${data.tools_used.join(", ")}` : (data.model || "J.A.R.V.I.S.");
+    appendMessage("assistant", data.reply, meta);
+    state.wakeBusy = false;
+    state.wakeAwake = true;
+    await playTTS(data.reply);
+    await loadApprovals();
+  } catch (err) {
+    thinking.textContent = "Hata: " + err.message;
+    state.wakeBusy = false;
+    ensureWakeRecognizerRunning();
+  }
+}
+
+function ensureWakeRecognizerRunning() {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec || !state.wakeEnabled || state.liveActive || state.wakeSpeaking || state.wakeBusy) return;
+  if (state.wakeRec) return;
+
+  try {
+    const rec = new SpeechRec();
+    state.wakeRec = rec;
+    rec.lang = "tr-TR";
+    rec.continuous = true;
+    rec.interimResults = false;
+
+    rec.onresult = async (ev) => {
+      if (state.wakeSpeaking || state.wakeBusy) return;
+      const lastResult = ev.results[ev.results.length - 1];
+      if (!lastResult || !lastResult.isFinal) return;
+      const spoken = (lastResult[0]?.transcript || "").trim();
+      if (!spoken) return;
+
+      const wakeRegex = /\b(?:hey\s*vera|ey\s*vera|hei\s*vera|hey\s*bera|merhaba\s*vera|alo\s*vera|hey\s*jarvis|vera|jarvis)\b/i;
+
+      if (!state.wakeAwake) {
+        const match = spoken.match(wakeRegex);
+        if (!match) return; // Ignore background speech that doesn't contain wake word
+        playJarvisChime();
+        state.wakeAwake = true;
+        armWakeSleepTimer(30000);
+        const afterWake = spoken.slice(match.index + match[0].length).replace(/^[\s,.:;!?-]+/, "").trim();
+        if (afterWake.length >= 4) {
+          await executeWakeVoiceCommand(afterWake);
+        } else {
+          const greeting = "Buyurun Yusuf Bey, sizi dinliyorum. Emriniz nedir?";
+          appendMessage("assistant", greeting, "J.A.R.V.I.S. Sesli Uyandırma");
+          await playTTS(greeting);
+        }
+      } else {
+        // Already awake and waiting for command!
+        playJarvisChime();
+        armWakeSleepTimer(30000);
+        const stripped = spoken.replace(wakeRegex, "").replace(/^[\s,.:;!?-]+/, "").trim() || spoken;
+        await executeWakeVoiceCommand(stripped);
+      }
+    };
+
+    rec.onerror = (ev) => {
+      state.wakeRec = null;
+      if (ev.error === "not-allowed") {
+        setWakeBannerState("standby", '⚠️ Mikrofon izni gerekli — "Hey Vera" nöbetini başlatmak için bu şeride dokunun.');
+        return;
+      }
+      if (state.wakeEnabled && !state.wakeSpeaking) {
+        setTimeout(ensureWakeRecognizerRunning, 900);
+      }
+    };
+
+    rec.onend = () => {
+      state.wakeRec = null;
+      if (state.wakeEnabled && !state.wakeSpeaking && !state.wakeBusy && !state.liveActive) {
+        setTimeout(ensureWakeRecognizerRunning, 350);
+      }
+    };
+
+    rec.start();
+    if (!state.wakeAwake) {
+      setWakeBannerState("standby", '🟢 "Hey Vera" nöbeti aktif — "Hey Vera" diyerek seslenebilirsiniz.');
+    }
+  } catch {
+    state.wakeRec = null;
+  }
+}
+
 function updateHudControls() {
+  const wwBtn = $("#btn-hud-wakeword");
+  if (wwBtn) {
+    wwBtn.textContent = state.wakeEnabled ? '📡 "Hey Vera": AÇIK' : '📡 "Hey Vera": KAPALI';
+    wwBtn.classList.toggle("active", state.wakeEnabled);
+  }
   const avBtn = $("#btn-hud-autovoice");
   if (avBtn) {
     avBtn.textContent = state.autoVoice ? "🔊 Oto-Ses: AÇIK" : "🔇 Oto-Ses: KAPALI";
@@ -159,6 +345,40 @@ function updateHudControls() {
     vsBtn.textContent = isJarvis ? "🗣️ Ses: JARVIS (Erkek)" : "🗣️ Ses: VERA (Kadın)";
   }
 }
+
+$("#btn-hud-wakeword")?.addEventListener("click", () => {
+  state.wakeEnabled = !state.wakeEnabled;
+  localStorage.setItem("vera_wake_enabled", String(state.wakeEnabled));
+  if (!state.wakeEnabled) {
+    state.wakeAwake = false;
+    if (state.wakeRec) { try { state.wakeRec.abort(); } catch {} state.wakeRec = null; }
+    setWakeBannerState("standby", '⚪ "Hey Vera" sesli nöbeti kapatıldı.');
+  } else {
+    ensureWakeRecognizerRunning();
+  }
+  updateHudControls();
+});
+
+$("#wake-status-banner")?.addEventListener("click", () => {
+  if (state.currentAudio) {
+    try { state.currentAudio.pause(); } catch {}
+    state.currentAudio = null;
+    state.wakeSpeaking = false;
+  }
+  state.wakeEnabled = true;
+  state.wakeAwake = true;
+  updateHudControls();
+  playJarvisChime();
+  setWakeBannerState("awake", "🎙️ VERA DİNLİYOR — Buyurun Yusuf Bey, komutunuzu söyleyin...");
+  armWakeSleepTimer(30000);
+  ensureWakeRecognizerRunning();
+});
+
+document.addEventListener("click", () => {
+  if (state.wakeEnabled && !state.wakeRec && !state.wakeSpeaking && !state.wakeBusy) {
+    ensureWakeRecognizerRunning();
+  }
+}, { passive: true });
 
 $("#btn-hud-autovoice")?.addEventListener("click", () => {
   state.autoVoice = !state.autoVoice;
@@ -194,6 +414,7 @@ $$(".tactical-chip").forEach((chip) => {
 
 async function loadChatHistory() {
   updateHudControls();
+  ensureWakeRecognizerRunning();
   const data = await api("/api/chat/history?session_id=web_main");
   const box = $("#chat-messages");
   box.innerHTML = "";
