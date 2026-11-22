@@ -113,43 +113,43 @@ class LLMRouter:
         errors: list[str] = []
 
         if self.settings.gemini_api_key:
-            model_name = (
+            primary_model = (
                 self.settings.gemini_smart_model
                 if use_smart
                 else self.settings.gemini_fast_model
             )
-            try:
-                resp = await self._call_gemini(
-                    model_name=model_name,
-                    system_prompt=system_prompt,
-                    messages=messages,
-                    tools_gemini=tools_gemini,
-                    attachments=attachments,
-                )
-                self.db.log_event(
-                    "llm_call",
-                    f"gemini/{model_name} tools={len(resp.tool_calls)}",
-                    tokens_in=resp.tokens_in,
-                    tokens_out=resp.tokens_out,
-                    model=model_name,
-                )
-                return resp
-            except Exception as exc:
-                logger.warning("Gemini (%s) hata verdi: %s", model_name, exc)
-                errors.append(f"Gemini({model_name}): {exc}")
-                # If smart model failed (e.g., free quota), try fast model before OpenRouter
-                if use_smart and model_name != self.settings.gemini_fast_model:
-                    try:
-                        resp = await self._call_gemini(
-                            model_name=self.settings.gemini_fast_model,
-                            system_prompt=system_prompt,
-                            messages=messages,
-                            tools_gemini=tools_gemini,
-                            attachments=attachments,
-                        )
-                        return resp
-                    except Exception as exc2:
-                        errors.append(f"GeminiFast: {exc2}")
+            candidates: list[str] = []
+            for m in (
+                primary_model,
+                self.settings.gemini_fast_model,
+                "gemini-3.8-flash",
+                "gemini-3.7-flash",
+                "gemini-3.5-flash",
+                "gemini-3.1-flash-lite",
+            ):
+                if m and m not in candidates:
+                    candidates.append(m)
+
+            for model_name in candidates:
+                try:
+                    resp = await self._call_gemini(
+                        model_name=model_name,
+                        system_prompt=system_prompt,
+                        messages=messages,
+                        tools_gemini=tools_gemini,
+                        attachments=attachments,
+                    )
+                    self.db.log_event(
+                        "llm_call",
+                        f"gemini/{model_name} tools={len(resp.tool_calls)}",
+                        tokens_in=resp.tokens_in,
+                        tokens_out=resp.tokens_out,
+                        model=model_name,
+                    )
+                    return resp
+                except Exception as exc:
+                    logger.warning("Gemini (%s) hata verdi: %s", model_name, exc)
+                    errors.append(f"Gemini({model_name}): {exc}")
 
         if self.settings.openrouter_api_key:
             try:

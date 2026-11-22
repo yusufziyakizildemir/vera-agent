@@ -33,10 +33,10 @@ class Settings(BaseSettings):
 
     # LLM Providers
     gemini_api_key: str = Field(default="")
-    gemini_fast_model: str = Field(default="gemini-2.5-flash")
-    gemini_smart_model: str = Field(default="gemini-2.5-pro")
-    gemini_live_model: str = Field(default="gemini-2.5-flash-native-audio-preview")
-    gemini_embed_model: str = Field(default="text-embedding-004")
+    gemini_fast_model: str = Field(default="gemini-3.8-flash")
+    gemini_smart_model: str = Field(default="gemini-3.8-flash")
+    gemini_live_model: str = Field(default="gemini-3.8-flash")
+    gemini_embed_model: str = Field(default="gemini-embedding-001")
 
     openrouter_api_key: str = Field(default="")
     openrouter_fallback_model: str = Field(
