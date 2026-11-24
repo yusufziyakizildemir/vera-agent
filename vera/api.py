@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import secrets
 from contextlib import asynccontextmanager
@@ -54,6 +55,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str = "web_main"
     voice: str | None = None
+    include_audio: bool = False
 
 
 class MemoryDocUpdate(BaseModel):
@@ -167,10 +169,18 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
         reply = await agent.handle_message(
             user_text=body.message, session_id=body.session_id, channel="web"
         )
+        audio_b64 = ""
+        if body.include_audio and reply.text:
+            try:
+                mp3 = await agent.voice.synthesize_mp3(reply.text, voice=body.voice)
+                audio_b64 = base64.b64encode(mp3).decode("ascii")
+            except Exception as exc:
+                logger.warning("Inline TTS üretilemedi: %s", exc)
         return {
             "reply": reply.text,
             "tools_used": reply.tools_used,
             "model": reply.model,
+            "audio_b64": audio_b64,
             "pending_approvals": [
                 {"id": a.id, "tool_name": a.tool_name, "summary": a.summary, "args": a.args}
                 for a in reply.pending_approvals
@@ -213,23 +223,54 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
     @app.post("/api/voice/converse")
     async def voice_converse(
         file: UploadFile = File(...),
-        session_id: str = Form(default="live_voice"),
+        session_id: str = Form(default="voice_jarvis"),
+        voice: str = Form(default=""),
         _=Depends(require_auth),
     ) -> dict[str, Any]:
         raw = await file.read()
-        mime = file.content_type or "audio/webm"
+        raw_mime = (file.content_type or "audio/webm").split(";")[0].strip()
+        if raw_mime not in {"audio/webm", "audio/mp4", "audio/ogg", "audio/wav", "audio/mpeg", "audio/aac"}:
+            raw_mime = "audio/webm"
         fname = file.filename or "speech.webm"
-        transcript = await agent.voice.transcribe(raw, filename=fname, mime_type=mime)
-        if not transcript.strip():
-            return {"transcript": "", "reply": "", "tools_used": []}
-        reply = await agent.handle_message(
-            user_text=transcript, session_id=session_id, channel="live_voice"
-        )
+
+        transcript = ""
+        if cfg.groq_api_key:
+            try:
+                transcript = await agent.voice.transcribe(raw, filename=fname, mime_type=raw_mime)
+            except Exception:
+                transcript = ""
+
+        if transcript.strip():
+            reply = await agent.handle_message(
+                user_text=transcript, session_id=session_id, channel="live_voice"
+            )
+        else:
+            # Single-pass Gemini native multimodal audio -> tool execution + spoken Turkish reply!
+            reply = await agent.handle_message(
+                user_text=(
+                    "Kullanıcının gönderdiği bu Türkçe ses kaydını doğrudan dinle. "
+                    "Eğer kayıtta anlaşılır bir konuşma yoksa sadece 'Sizi duyamadım Yusuf Bey, tekrar eder misiniz?' de. "
+                    "Konuşma varsa gerekiyorsa araçları çalıştır ve 1-2 kısa cümlelik çok seri Türkçe yanıt ver."
+                ),
+                session_id=session_id,
+                channel="live_voice",
+                image_attachments=[{"bytes": raw, "mime_type": raw_mime}],
+            )
+
+        audio_b64 = ""
+        if reply.text:
+            try:
+                mp3 = await agent.voice.synthesize_mp3(reply.text, voice=voice or None)
+                audio_b64 = base64.b64encode(mp3).decode("ascii")
+            except Exception as exc:
+                logger.warning("Converse inline TTS hatası: %s", exc)
+
         return {
             "transcript": transcript,
             "reply": reply.text,
             "tools_used": reply.tools_used,
             "model": reply.model,
+            "audio_b64": audio_b64,
         }
 
     # --- Gemini Live Real-Time Bidirectional Voice WebSocket ---
@@ -444,10 +485,14 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
             return Response(
                 content=(WEB_DIR / "sw.js").read_text(encoding="utf-8"),
                 media_type="application/javascript",
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
             )
 
         @app.get("/", response_class=HTMLResponse)
-        async def index() -> str:
-            return (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        async def index() -> Response:
+            return HTMLResponse(
+                content=(WEB_DIR / "index.html").read_text(encoding="utf-8"),
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+            )
 
     return app
