@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     hf_backup_repo: str = Field(default="")
     hf_sync_interval_minutes: int = Field(default=10)
 
+    # Voice cloning (free XTTS v2 Space on Hugging Face), falls back to Edge-TTS
+    voice_clone_enabled: bool = Field(default=True)
+    voice_clone_space: str = Field(default="hasanbasbunar/Voice-Cloning-XTTS-v2")
+    voice_clone_timeout: int = Field(default=25)
+    voice_clone_max_chars: int = Field(default=280)
+
     def model_post_init(self, __context: Any) -> None:
         if self.render_external_url and self.public_base_url.startswith("http://localhost"):
             self.public_base_url = self.render_external_url.rstrip("/")
@@ -88,6 +94,20 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.data_dir / "db" / "vera.db"
+
+    @property
+    def voice_dir(self) -> Path:
+        return self.data_dir / "voice"
+
+    @property
+    def voice_reference_path(self) -> Path:
+        return self.voice_dir / "reference.mp3"
+
+    @property
+    def voice_ref_token(self) -> str:
+        import hashlib
+
+        return hashlib.sha256(f"vera-voice-ref-{self.jwt_secret}".encode()).hexdigest()[:40]
 
     @property
     def uploads_dir(self) -> Path:

@@ -45,6 +45,7 @@ class VoiceEngine:
     def __init__(self, settings: Settings, llm: LLMRouter):
         self.settings = settings
         self.llm = llm
+        self.last_engine = "edge"
 
     async def transcribe(
         self, audio_bytes: bytes, filename: str = "voice.ogg", mime_type: str = "audio/ogg"
@@ -73,13 +74,66 @@ class VoiceEngine:
         # Fallback to Gemini native audio understanding
         return await self.llm.transcribe_with_gemini(audio_bytes=audio_bytes, mime_type=mime_type)
 
+    async def synthesize_cloned(self, speech_text: str) -> bytes | None:
+        """Speaks with the user's reference voice via free XTTS v2 Space (None on any failure)."""
+        s = self.settings
+        if not (s.voice_clone_enabled and s.voice_reference_path.exists()):
+            return None
+        base = (s.public_base_url or "").rstrip("/")
+        if not base.startswith("https://"):
+            return None
+        if len(speech_text) > s.voice_clone_max_chars:
+            return None
+        ref_url = f"{base}/api/voice/ref/{s.voice_ref_token}.mp3"
+
+        def _call() -> bytes | None:
+            from gradio_client import Client
+
+            client = Client(s.voice_clone_space, token=s.hf_token or None, verbose=False)
+            out = client.predict(
+                text=speech_text,
+                reference_audio_url=ref_url,
+                example_audio_name="audio_1.wav",
+                language="Turkish",
+                temperature=0.7,
+                speed=1.1,
+                api_name="/voice_clone_synthesis",
+            )
+            path = out[0] if isinstance(out, (list, tuple)) else out
+            return Path(str(path)).read_bytes()
+
+        try:
+            wav = await asyncio.wait_for(asyncio.to_thread(_call), timeout=s.voice_clone_timeout)
+        except Exception as exc:
+            logger.warning("Ses klonlama atlandı, Edge-TTS yedeği: %s", exc)
+            return None
+        if not wav:
+            return None
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            return wav
+        proc = await asyncio.create_subprocess_exec(
+            ffmpeg, "-y", "-i", "pipe:0", "-f", "mp3", "-b:a", "64k", "pipe:1",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        mp3, _ = await proc.communicate(wav)
+        return mp3 if proc.returncode == 0 and mp3 else wav
+
     async def synthesize_mp3(self, text: str, voice: str | None = None) -> bytes:
-        """Synthesizes fluent Turkish MP3 audio in-memory via free Microsoft Edge-TTS."""
+        """Cloned voice first (short replies), Edge-TTS fallback."""
         import edge_tts
 
         speech_text = clean_text_for_speech(text)
         if not speech_text:
             raise ValueError("Seslendirilecek metin boş.")
+
+        self.last_engine = "edge"
+        cloned = await self.synthesize_cloned(speech_text)
+        if cloned:
+            self.last_engine = "clone"
+            return cloned
 
         selected_voice = (voice or self.settings.tts_voice or "tr-TR-AhmetNeural").strip()
         communicate = edge_tts.Communicate(speech_text, voice=selected_voice, rate="+18%")

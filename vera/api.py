@@ -215,10 +215,21 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
             )
         return {"reply": reply.text, "tools_used": reply.tools_used, "filename": safe_name}
 
+    @app.get("/api/voice/ref/{token}.mp3")
+    async def voice_reference(token: str) -> Response:
+        # Unguessable per-deployment URL: only the XTTS Space fetches it
+        if not secrets.compare_digest(token, cfg.voice_ref_token) or not cfg.voice_reference_path.exists():
+            raise HTTPException(status_code=404, detail="Not found")
+        return Response(content=cfg.voice_reference_path.read_bytes(), media_type="audio/mpeg")
+
     @app.post("/api/voice/tts")
     async def voice_tts(body: ChatRequest, _=Depends(require_auth)) -> Response:
         mp3 = await agent.voice.synthesize_mp3(body.message, voice=body.voice)
-        return Response(content=mp3, media_type="audio/mpeg")
+        return Response(
+            content=mp3,
+            media_type="audio/mpeg",
+            headers={"X-Voice-Engine": agent.voice.last_engine},
+        )
 
     @app.post("/api/voice/converse")
     async def voice_converse(

@@ -96,6 +96,13 @@ class CloudPersistence:
                             shutil.copytree(skill_dir, dest_dir, dirs_exist_ok=True)
                             restored_files += 1
 
+                # Restore voice cloning reference sample (private)
+                snap_voice = local_snap / "voice" / "reference.mp3"
+                if snap_voice.exists():
+                    self.settings.voice_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(snap_voice, self.settings.voice_reference_path)
+                    restored_files += 1
+
             self.last_sync_status = f"geri_yuklendi ({restored_files} oge)"
             logger.info("Bulut yedeği geri yüklendi: %d öğe (%s)", restored_files, self.settings.hf_backup_repo)
             return {"status": "restored", "files": restored_files}
