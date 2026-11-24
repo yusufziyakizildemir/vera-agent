@@ -1,7 +1,7 @@
 {
-  "name": "J.A.R.V.I.S. // V.E.R.A.",
-  "short_name": "J.A.R.V.I.S.",
-  "description": "7/24 Tam Ekran Sesli J.A.R.V.I.S. Otonom Yapay Zeka Çekirdeği.",
+  "name": "V.E.R.A.",
+  "short_name": "V.E.R.A.",
+  "description": "7/24 Tam Ekran Sesli V.E.R.A. Otonom Yapay Zeka Çekirdeği.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#01060c",
@@ -9,7 +9,7 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='42' fill='%23020c16'/><circle cx='96' cy='96' r='74' fill='none' stroke='%2338e8ff' stroke-width='6' stroke-dasharray='55 12'/><circle cx='96' cy='96' r='58' fill='none' stroke='%230284c7' stroke-width='9' opacity='0.55'/><circle cx='96' cy='96' r='48' fill='none' stroke='%23f5b027' stroke-width='4' stroke-dasharray='60 240'/><circle cx='96' cy='96' r='38' fill='none' stroke='%23e0f9ff' stroke-width='3'/><text x='50%25' y='53%25' text-anchor='middle' dominant-baseline='middle' fill='%23e0f9ff' font-family='sans-serif' font-size='21' font-weight='800' letter-spacing='2'>JARVIS</text></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='42' fill='%23020c16'/><circle cx='96' cy='96' r='74' fill='none' stroke='%2338e8ff' stroke-width='6' stroke-dasharray='55 12'/><circle cx='96' cy='96' r='58' fill='none' stroke='%230284c7' stroke-width='9' opacity='0.55'/><circle cx='96' cy='96' r='48' fill='none' stroke='%23f5b027' stroke-width='4' stroke-dasharray='60 240'/><circle cx='96' cy='96' r='38' fill='none' stroke='%23e0f9ff' stroke-width='3'/><text x='50%25' y='53%25' text-anchor='middle' dominant-baseline='middle' fill='%23e0f9ff' font-family='sans-serif' font-size='25' font-weight='800' letter-spacing='3'>V.E.R.A.</text></svg>",
       "sizes": "192x192",
       "type": "image/svg+xml"
     }

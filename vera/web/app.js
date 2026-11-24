@@ -150,7 +150,7 @@ async function speakFast(text) {
 
   state.speaking = true;
   state.currentSpokenText = clean;
-  setCoreVisual("speaking", "J.A.R.V.I.S. KONUŞUYOR");
+  setCoreVisual("speaking", "V.E.R.A. KONUŞUYOR");
   ensureMicListening();
 
   try {
