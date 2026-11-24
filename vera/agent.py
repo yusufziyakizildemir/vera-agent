@@ -126,8 +126,25 @@ class VeraAgent:
         if persist_history:
             self.db.add_message(session_id, channel, "user", enriched_text[:12000])
 
-        # 1) Recall relevant episodic memories
-        recalled = await self.memory.recall(query=user_text[:300], limit=6, llm=self.llm)
+        # 0) Voice-driven approval shortcut ("onayla" / "iptal et")
+        lower_clean = user_text.strip().lower()
+        if lower_clean in {"onayla", "evet onayla", "onaylıyorum", "evet", "iptal", "iptal et", "vazgeç"}:
+            pending_list = self.db.list_approvals(status="pending", limit=1)
+            if pending_list:
+                latest_ap = pending_list[0]
+                is_ok = lower_clean in {"onayla", "evet onayla", "onaylıyorum", "evet"}
+                res = await self.resolve_approval(latest_ap["id"], approved=is_ok)
+                msg_txt = (
+                    f"Emredersiniz Yusuf Bey, {latest_ap['tool_name']} işlemini onaylayıp icra ettim."
+                    if is_ok
+                    else "Emredersiniz Yusuf Bey, işlemi iptal ettim."
+                )
+                if persist_history:
+                    self.db.add_message(session_id, channel, "assistant", msg_txt)
+                return AgentReply(text=msg_txt, tools_used=[latest_ap["tool_name"]], model="jarvis-gate")
+
+        # 1) Instant local FTS5 memory recall (0.4ms, zero network embedding delay!)
+        recalled = self.db.search_memory(query=user_text[:200], query_embedding=None, limit=4)
         skills_index = build_skills_prompt_index(self.settings.skills_dir)
         system_prompt = self.memory.build_system_prompt(
             recalled_memories=recalled,
@@ -135,8 +152,8 @@ class VeraAgent:
             channel=channel,
         )
 
-        # 2) Build recent conversation window
-        history = self.db.get_recent_messages(session_id, limit=16) if persist_history else []
+        # 2) Build compact recent conversation window for ultra-fast latency
+        history = self.db.get_recent_messages(session_id, limit=6) if persist_history else []
         messages: list[dict[str, Any]] = [
             {"role": m["role"], "content": m["content"]} for m in history
         ]

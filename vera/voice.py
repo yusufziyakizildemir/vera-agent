@@ -82,7 +82,7 @@ class VoiceEngine:
             raise ValueError("Seslendirilecek metin boş.")
 
         selected_voice = (voice or self.settings.tts_voice or "tr-TR-AhmetNeural").strip()
-        communicate = edge_tts.Communicate(speech_text, voice=selected_voice, rate="+12%")
+        communicate = edge_tts.Communicate(speech_text, voice=selected_voice, rate="+18%")
         audio_chunks: list[bytes] = []
         async for chunk in communicate.stream():
             if chunk.get("type") == "audio" and chunk.get("data"):

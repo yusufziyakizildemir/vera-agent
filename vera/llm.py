@@ -253,19 +253,33 @@ class LLMRouter:
 
         config_kwargs: dict[str, Any] = {
             "system_instruction": system_prompt,
-            "temperature": 0.4,
+            "temperature": 0.35,
         }
         if tools_gemini:
             config_kwargs["tools"] = [{"function_declarations": tools_gemini}]
+        try:
+            config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        except Exception:
+            pass
 
         config = types.GenerateContentConfig(**config_kwargs)
 
         def _invoke():
-            return client.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=config,
-            )
+            try:
+                return client.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=config,
+                )
+            except Exception as e:
+                if "thinking" in str(e).lower():
+                    config_kwargs.pop("thinking_config", None)
+                    return client.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=types.GenerateContentConfig(**config_kwargs),
+                    )
+                raise
 
         raw = await asyncio.to_thread(_invoke)
 
