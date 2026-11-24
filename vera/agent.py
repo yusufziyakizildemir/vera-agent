@@ -15,11 +15,14 @@ from vera.llm import LLMRouter
 from vera.memory import MemoryManager
 from vera.tools.documents import extract_document_text, register_document_tools
 from vera.tools.google_workspace import register_google_workspace_tools
+from vera.tools.life_os import register_life_os_tools
+from vera.tools.live_intel import register_live_intel_tools
 from vera.tools.mcp_client import register_mcp_tools
 from vera.tools.memory_tools import register_memory_tools
 from vera.tools.registry import ToolContext, ToolRegistry
 from vera.tools.scheduler_tools import register_scheduler_tools
 from vera.tools.skill_manager import build_skills_prompt_index, register_skill_tools
+from vera.tools.smart_utils import register_smart_utils_tools
 from vera.tools.system_ops import register_system_tools
 from vera.tools.web_tools import register_web_tools
 from vera.voice import VoiceEngine
@@ -56,6 +59,9 @@ def build_default_registry() -> ToolRegistry:
     register_scheduler_tools(registry)
     register_skill_tools(registry)
     register_mcp_tools(registry)
+    register_live_intel_tools(registry)
+    register_life_os_tools(registry)
+    register_smart_utils_tools(registry)
     return registry
 
 
