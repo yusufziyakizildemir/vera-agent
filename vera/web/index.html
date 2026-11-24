@@ -2,35 +2,149 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#02050d" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#020b14" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>V.E.R.A. // J.A.R.V.I.S.</title>
+  <meta name="apple-mobile-web-app-title" content="J.A.R.V.I.S." />
+  <title>J.A.R.V.I.S. // V.E.R.A.</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <!-- Minimal Password Gate (Only shown once until token saved in localStorage) -->
+  <!-- Persistent Mobile-Unlocked Audio Player -->
+  <audio id="jarvis-player" playsinline preload="auto"></audio>
+
+  <!-- Technical Blueprint Schematic Background -->
+  <div class="blueprint-bg" aria-hidden="true">
+    <div class="bp-grid"></div>
+    <div class="bp-crosshair bp-tl"></div>
+    <div class="bp-crosshair bp-tr"></div>
+    <div class="bp-crosshair bp-bl"></div>
+    <div class="bp-crosshair bp-br"></div>
+  </div>
+
+  <!-- Minimal Password Gate (Only shown once; saved permanently on phone/PC) -->
   <div id="login-screen" class="login-screen">
     <form id="login-form" class="minimal-login">
-      <div class="core-ring-small"></div>
-      <input id="login-password" type="password" placeholder="J.A.R.V.I.S. Erişim Parolası" required autocomplete="current-password" />
+      <div class="login-emblem">J.A.R.V.I.S.</div>
+      <input id="login-password" type="password" placeholder="Erişim Parolası" required autocomplete="current-password" />
+      <button type="submit" class="login-submit">BAĞLAN</button>
       <div id="login-error" class="error-text"></div>
     </form>
   </div>
 
-  <!-- Pure Full-Screen Voice-Only J.A.R.V.I.S. Core (Zero Buttons / Zero Clutter) -->
+  <!-- Pure Full-Screen J.A.R.V.I.S. Holographic Interface -->
   <div id="app-shell" class="pure-voice-screen hidden">
-    <div id="reactor-core" class="reactor-core">
-      <div class="ring ring-outer"></div>
-      <div class="ring ring-mid"></div>
-      <div class="ring ring-inner"></div>
-      <div class="core-eye"></div>
+    <div id="reactor-core" class="jarvis-dial">
+      <svg class="jarvis-svg" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#38e8ff" stop-opacity="0.22" />
+            <stop offset="65%" stop-color="#0284c7" stop-opacity="0.08" />
+            <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+          </radialGradient>
+          <filter id="cyanGlow" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="strongGlow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="7" result="blur1" />
+            <feGaussianBlur stdDeviation="2" result="blur2" />
+            <feMerge>
+              <feMergeNode in="blur1" />
+              <feMergeNode in="blur2" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        <!-- Ambient Core Backlight -->
+        <circle cx="250" cy="250" r="235" fill="url(#coreGlow)" />
+
+        <!-- Inner Radar Spider Schematic (Static / Slow Pulse) -->
+        <g class="svg-spider" opacity="0.32" stroke="#38e8ff" stroke-width="0.8" fill="none">
+          <circle cx="250" cy="250" r="45" />
+          <circle cx="250" cy="250" r="70" />
+          <circle cx="250" cy="250" r="95" stroke-dasharray="3 4" />
+          <circle cx="250" cy="250" r="120" />
+          <line x1="250" y1="120" x2="250" y2="380" />
+          <line x1="120" y1="250" x2="380" y2="250" />
+          <line x1="158" y1="158" x2="342" y2="342" />
+          <line x1="342" y1="158" x2="158" y2="342" />
+        </g>
+
+        <!-- LAYER 1: Outer Segmented Armor Ring & Mechanical Flanges -->
+        <g class="svg-ring-outer" filter="url(#cyanGlow)">
+          <!-- Base outer boundary -->
+          <circle cx="250" cy="250" r="218" fill="none" stroke="#0ea5e9" stroke-width="2" opacity="0.55" />
+          <!-- Thick segmented cyan armor arcs -->
+          <circle cx="250" cy="250" r="210" fill="none" stroke="#38e8ff" stroke-width="11"
+                  stroke-dasharray="155 18 95 22 180 16 110 24" stroke-linecap="butt" />
+          <!-- Outer mechanical flange brackets -->
+          <path d="M 210 26 L 295 26 L 305 34 L 200 34 Z" fill="#38e8ff" opacity="0.85" />
+          <path d="M 205 474 L 290 474 L 300 466 L 195 466 Z" fill="#38e8ff" opacity="0.85" />
+          <!-- Right mechanical slotted block -->
+          <circle cx="250" cy="250" r="224" fill="none" stroke="#38e8ff" stroke-width="10"
+                  stroke-dasharray="70 1350" stroke-dashoffset="45" />
+          <circle cx="250" cy="250" r="224" fill="none" stroke="#020b14" stroke-width="7"
+                  stroke-dasharray="4 6" stroke-dashoffset="45" />
+          <!-- Outer degree ticks -->
+          <circle cx="250" cy="250" r="196" fill="none" stroke="#7dd3fc" stroke-width="8"
+                  stroke-dasharray="2 10.8" opacity="0.75" />
+        </g>
+
+        <!-- LAYER 2: Translucent Azure Halo Band & Compass Graduations (Counter-Rotating) -->
+        <g class="svg-ring-halo">
+          <circle cx="250" cy="250" r="172" fill="none" stroke="#0284c7" stroke-width="26" opacity="0.28" />
+          <circle cx="250" cy="250" r="172" fill="none" stroke="#38e8ff" stroke-width="22"
+                  stroke-dasharray="120 35 80 40 160 30" opacity="0.32" />
+          <circle cx="250" cy="250" r="184" fill="none" stroke="#38e8ff" stroke-width="1.5" opacity="0.7" />
+          <circle cx="250" cy="250" r="158" fill="none" stroke="#38e8ff" stroke-width="1.5" opacity="0.6" />
+          <!-- Fine graduation ticks inside halo -->
+          <circle cx="250" cy="250" r="172" fill="none" stroke="#bae6fd" stroke-width="14"
+                  stroke-dasharray="1.5 7.5" opacity="0.55" />
+        </g>
+
+        <!-- LAYER 3: Golden-Amber Mechanical Arc & 4 Yellow Indicator Nodes -->
+        <g class="svg-ring-gold" filter="url(#cyanGlow)">
+          <!-- Amber arc on left side -->
+          <circle cx="250" cy="250" r="152" fill="none" stroke="#f5b027" stroke-width="6"
+                  stroke-dasharray="170 900" stroke-dashoffset="-385" stroke-linecap="round" />
+          <!-- Fine amber teeth along top-left -->
+          <circle cx="250" cy="250" r="145" fill="none" stroke="#facc15" stroke-width="5"
+                  stroke-dasharray="2 5" stroke-dashoffset="-350" opacity="0.85" />
+          <!-- 4 glowing yellow indicator dots at top-inner arc -->
+          <circle cx="212" cy="112" r="3.6" fill="#facc15" />
+          <circle cx="236" cy="107" r="3.6" fill="#facc15" />
+          <circle cx="262" cy="107" r="3.6" fill="#facc15" />
+          <circle cx="286" cy="112" r="3.6" fill="#facc15" />
+        </g>
+
+        <!-- LAYER 4: High-Intensity White-Cyan Inner Core Ring -->
+        <g class="svg-ring-inner" filter="url(#strongGlow)">
+          <circle cx="250" cy="250" r="134" fill="none" stroke="#e0f2fe" stroke-width="4.5"
+                  stroke-dasharray="240 24 140 24" />
+          <circle cx="250" cy="250" r="126" fill="none" stroke="#38e8ff" stroke-width="2"
+                  stroke-dasharray="4 8" opacity="0.9" />
+          <circle cx="250" cy="250" r="118" fill="none" stroke="#0ea5e9" stroke-width="1.2" opacity="0.6" />
+        </g>
+
+        <!-- Horizontal Holographic Lens Flare Line -->
+        <line x1="75" y1="250" x2="425" y2="250" stroke="#e0f2fe" stroke-width="1.4" opacity="0.55" filter="url(#cyanGlow)" />
+      </svg>
+
+      <!-- Center J.A.R.V.I.S. Typography -->
+      <div class="jarvis-center-text">J.A.R.V.I.S.</div>
     </div>
 
+    <!-- Minimalist Movie-HUD Live Voice Subtitles -->
     <div class="voice-hud-caption">
-      <div id="jarvis-state" class="jarvis-state">SİSTEM HAZIR — SESLİ KOMUT BEKLENİYOR</div>
+      <div id="jarvis-state" class="jarvis-state">SİSTEMİ BAŞLATMAK İÇİN EKRANA DOKUNUN</div>
       <div id="jarvis-heard" class="jarvis-heard"></div>
       <div id="jarvis-reply" class="jarvis-reply"></div>
     </div>

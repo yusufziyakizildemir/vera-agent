@@ -1,15 +1,15 @@
 {
-  "name": "VERA — 7/24 Kişisel Yapay Zeka Ajanı",
-  "short_name": "VERA",
-  "description": "7/24 çalışan, seni tanıyan kişisel yapay zeka asistanı ve canlı sesli görüşme paneli.",
+  "name": "J.A.R.V.I.S. // V.E.R.A.",
+  "short_name": "J.A.R.V.I.S.",
+  "description": "7/24 Tam Ekran Sesli J.A.R.V.I.S. Otonom Yapay Zeka Çekirdeği.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#070b14",
-  "theme_color": "#6366f1",
+  "background_color": "#01060c",
+  "theme_color": "#020b14",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%236366f1'/><stop offset='100%25' stop-color='%2306b6d4'/></linearGradient></defs><rect width='192' height='192' rx='44' fill='url(%23g)'/><text x='50%25' y='56%25' text-anchor='middle' dominant-baseline='middle' fill='white' font-family='sans-serif' font-size='96' font-weight='700'>V</text></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='42' fill='%23020c16'/><circle cx='96' cy='96' r='74' fill='none' stroke='%2338e8ff' stroke-width='6' stroke-dasharray='55 12'/><circle cx='96' cy='96' r='58' fill='none' stroke='%230284c7' stroke-width='9' opacity='0.55'/><circle cx='96' cy='96' r='48' fill='none' stroke='%23f5b027' stroke-width='4' stroke-dasharray='60 240'/><circle cx='96' cy='96' r='38' fill='none' stroke='%23e0f9ff' stroke-width='3'/><text x='50%25' y='53%25' text-anchor='middle' dominant-baseline='middle' fill='%23e0f9ff' font-family='sans-serif' font-size='21' font-weight='800' letter-spacing='2'>JARVIS</text></svg>",
       "sizes": "192x192",
       "type": "image/svg+xml"
     }

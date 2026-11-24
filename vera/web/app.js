@@ -1,18 +1,20 @@
-/* V.E.R.A. // J.A.R.V.I.S. — %100 Saf Sesli Komuta Çekirdeği (Sıfır Yama / Ultra-Seri / Anında Barge-In) */
+/* J.A.R.V.I.S. // V.E.R.A. — Tam Ekran Holografik Ses Çekirdeği (Masaüstü & Mobil Edge/Chrome/Safari) */
 
 const state = {
   token: localStorage.getItem("vera_token") || "",
   ttsVoice: localStorage.getItem("vera_tts_voice") || "tr-TR-AhmetNeural",
-  awake: true, // Doğrudan uyanık başlar: hiç buton olmadan konuşabilirsiniz
+  awake: true,
   busy: false,
   speaking: false,
+  audioUnlocked: false,
   rec: null,
-  currentAudio: null,
+  mediaRec: null,
+  mediaChunks: [],
   ttsGenId: 0,
   currentSpokenText: "",
   interimBuffer: "",
   silenceTimer: null,
-  sleepTimer: null,
+  wakeLock: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -20,7 +22,7 @@ const $ = (sel) => document.querySelector(sel);
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
-  if (options.body && !headers["Content-Type"]) {
+  if (!(options.body instanceof FormData) && options.body && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
   const resp = await fetch(path, { ...options, headers });
@@ -35,6 +37,38 @@ async function api(path, options = {}) {
   }
   const ct = resp.headers.get("content-type") || "";
   return ct.includes("application/json") ? resp.json() : resp;
+}
+
+/* Keep Phone Screen Awake (Screen Wake Lock API) */
+async function requestPhoneWakeLock() {
+  if ("wakeLock" in navigator && !state.wakeLock) {
+    try {
+      state.wakeLock = await navigator.wakeLock.request("screen");
+      state.wakeLock.addEventListener("release", () => { state.wakeLock = null; });
+    } catch {}
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    requestPhoneWakeLock();
+    if (state.audioUnlocked && !state.busy && !state.speaking) {
+      ensureMicListening();
+    }
+  }
+});
+
+/* Unlock Mobile Browser Audio on First Tap */
+function unlockMobileAudio() {
+  if (state.audioUnlocked) return;
+  state.audioUnlocked = true;
+  requestPhoneWakeLock();
+  const player = $("#jarvis-player");
+  if (player) {
+    // 0.01s silent WAV data URI unlocks persistent <audio> on iOS/Android
+    player.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+    player.play().catch(() => {});
+  }
 }
 
 function setCoreVisual(mode, statusText) {
@@ -55,13 +89,13 @@ function playChime() {
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(freq, now + i * 0.06);
-      g.gain.setValueAtTime(0.11, now + i * 0.06);
-      g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.12);
+      osc.frequency.setValueAtTime(freq, now + i * 0.055);
+      g.gain.setValueAtTime(0.11, now + i * 0.055);
+      g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.055 + 0.11);
       osc.connect(g);
       g.connect(ctx.destination);
-      osc.start(now + i * 0.06);
-      osc.stop(now + i * 0.06 + 0.13);
+      osc.start(now + i * 0.055);
+      osc.stop(now + i * 0.055 + 0.12);
     });
   } catch {}
 }
@@ -91,9 +125,9 @@ function isEcho(heardRaw, spokenRaw) {
 
 function interruptSpeech() {
   state.ttsGenId += 1;
-  if (state.currentAudio) {
-    try { state.currentAudio.pause(); } catch {}
-    state.currentAudio = null;
+  const player = $("#jarvis-player");
+  if (player) {
+    try { player.pause(); player.removeAttribute("src"); } catch {}
   }
   if (window.speechSynthesis) {
     try { window.speechSynthesis.cancel(); } catch {}
@@ -106,9 +140,9 @@ function interruptSpeech() {
 
 async function speakFast(text) {
   const genId = ++state.ttsGenId;
-  if (state.currentAudio) {
-    try { state.currentAudio.pause(); } catch {}
-    state.currentAudio = null;
+  const player = $("#jarvis-player");
+  if (player) {
+    try { player.pause(); } catch {}
   }
 
   const clean = (text || "").trim();
@@ -116,7 +150,7 @@ async function speakFast(text) {
 
   state.speaking = true;
   state.currentSpokenText = clean;
-  setCoreVisual("speaking", "V.E.R.A. KONUŞUYOR");
+  setCoreVisual("speaking", "J.A.R.V.I.S. KONUŞUYOR");
   ensureMicListening();
 
   try {
@@ -130,18 +164,17 @@ async function speakFast(text) {
 
     await new Promise((resolve) => {
       const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      state.currentAudio = audio;
+      const audioEl = player || new Audio();
+      audioEl.src = url;
       const done = () => {
         URL.revokeObjectURL(url);
         resolve();
       };
-      audio.onended = done;
-      audio.onerror = done;
-      audio.play().catch(done);
+      audioEl.onended = done;
+      audioEl.onerror = done;
+      audioEl.play().catch(done);
     });
   } catch {
-    // Instant local browser TTS fallback if network audio fails
     if (window.speechSynthesis && state.ttsGenId === genId) {
       const u = new SpeechSynthesisUtterance(clean);
       u.lang = "tr-TR";
@@ -151,7 +184,6 @@ async function speakFast(text) {
   } finally {
     if (state.ttsGenId === genId) {
       state.speaking = false;
-      state.currentAudio = null;
       state.currentSpokenText = "";
       setCoreVisual(state.awake ? "awake" : "", state.awake ? "DİNLİYORUM YUSUF BEY" : '"HEY VERA" BEKLENİYOR');
       ensureMicListening();
@@ -188,7 +220,6 @@ async function processSpokenUtterance(rawSpoken) {
     return;
   }
 
-  // Standby command check
   if (/^(uyku moduna geç|beklemeye geç|nöbete geç)\b/i.test(spoken)) {
     state.awake = false;
     const msg = "Nöbet moduna geçtim Efendim. Hey Vera diyerek uyandırabilirsiniz.";
@@ -198,7 +229,6 @@ async function processSpokenUtterance(rawSpoken) {
     return;
   }
 
-  // Strip optional "Hey Vera" prefix if user included it while already awake
   const match = spoken.match(wakeRegex);
   if (match && spoken.replace(wakeRegex, "").trim().length < 2) {
     playChime();
@@ -235,9 +265,51 @@ async function sendVoiceCommand(cmd) {
   }
 }
 
+/* Fallback Mobile MediaRecorder if Web Speech API is unavailable */
+async function toggleMobileRecorderFallback() {
+  if (state.mediaRec && state.mediaRec.state === "recording") {
+    state.mediaRec.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    state.mediaChunks = [];
+    const mr = new MediaRecorder(stream);
+    state.mediaRec = mr;
+    setCoreVisual("awake", "KONUŞUN — BİTİNCE HALKAYA DOKUNUN");
+    mr.ondataavailable = (e) => { if (e.data.size > 0) state.mediaChunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(state.mediaChunks, { type: mr.mimeType || "audio/webm" });
+      if (blob.size < 500) return;
+      state.busy = true;
+      setCoreVisual("busy", "SES ÇÖZÜMLENİYOR...");
+      try {
+        const fd = new FormData();
+        fd.append("file", blob, "mobile_voice.webm");
+        fd.append("session_id", "voice_jarvis");
+        const data = await api("/api/voice/converse", { method: "POST", body: fd });
+        state.busy = false;
+        if (data.transcript) $("#jarvis-heard").textContent = `"${data.transcript}"`;
+        if (data.reply) {
+          $("#jarvis-reply").textContent = data.reply;
+          await speakFast(data.reply);
+        }
+      } catch (err) {
+        state.busy = false;
+        setCoreVisual("awake", "HATA: " + err.message);
+      }
+    };
+    mr.start();
+  } catch (err) {
+    setCoreVisual("", "MİKROFON İZNİ GEREKLİ: " + err.message);
+  }
+}
+
 function ensureMicListening() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec || state.busy || state.rec) return;
+  if (!SpeechRec) return;
+  if (state.busy || state.rec) return;
 
   try {
     const rec = new SpeechRec();
@@ -253,7 +325,6 @@ function ensureMicListening() {
       const text = (last[0]?.transcript || "").trim();
       if (!text) return;
 
-      // Instant Barge-In: If VERA is talking and user starts talking, stop VERA immediately!
       if (state.speaking) {
         if (!isEcho(text, state.currentSpokenText) && text.length >= 2) {
           interruptSpeech();
@@ -267,7 +338,6 @@ function ensureMicListening() {
       if (last.isFinal) {
         processSpokenUtterance(text);
       } else {
-        // Fast 700ms silence commit so user never waits 2.5s for browser isFinal!
         state.interimBuffer = text;
         if (state.silenceTimer) clearTimeout(state.silenceTimer);
         state.silenceTimer = setTimeout(() => {
@@ -283,7 +353,7 @@ function ensureMicListening() {
     rec.onerror = (ev) => {
       state.rec = null;
       if (ev.error === "not-allowed") {
-        setCoreVisual("", "MİKROFONU AÇMAK İÇİN EKRANA BİR KEZ DOKUNUN");
+        setCoreVisual("", "MİKROFONU AÇMAK İÇİN HALKAYA DOKUNUN");
         return;
       }
       if (!state.busy) setTimeout(ensureMicListening, 350);
@@ -303,10 +373,16 @@ function ensureMicListening() {
   }
 }
 
-/* Click anywhere on screen to interrupt speech or unlock microphone */
+/* Tap anywhere on the J.A.R.V.I.S. screen */
 $("#app-shell")?.addEventListener("click", () => {
+  unlockMobileAudio();
   if (state.speaking) {
     interruptSpeech();
+    return;
+  }
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    toggleMobileRecorderFallback();
     return;
   }
   state.awake = true;
@@ -318,6 +394,7 @@ $("#app-shell")?.addEventListener("click", () => {
 /* Login & Boot */
 $("#login-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
+  unlockMobileAudio();
   $("#login-error").textContent = "";
   try {
     const res = await fetch("/api/auth/login", {

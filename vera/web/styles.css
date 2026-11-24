@@ -1,183 +1,261 @@
 :root {
-  --bg: #02050d;
-  --cyan: #00f0ff;
-  --cyan-soft: rgba(0, 240, 255, 0.25);
+  --bg-deep: #01060c;
+  --bg-teal: #051b2c;
+  --cyan: #38e8ff;
+  --cyan-bright: #e0f9ff;
+  --gold: #f5b027;
   --emerald: #10b981;
-  --amber: #f59e0b;
-  --indigo: #6366f1;
-  --text: #e2f8ff;
-  --muted: rgba(148, 163, 184, 0.72);
+  --text: #e6f9ff;
+  --muted: rgba(125, 211, 252, 0.72);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
 
 html, body {
   width: 100%;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 45%, #071529 0%, #02050d 70%);
+  background: radial-gradient(circle at 50% 44%, var(--bg-teal) 0%, #020c16 52%, var(--bg-deep) 100%);
   color: var(--text);
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Orbitron", "Rajdhani", "Segoe UI", "Inter", system-ui, sans-serif;
 }
 
 .hidden { display: none !important; }
 
-/* Minimal Login */
+/* Technical Blueprint Schematic Background Overlay */
+.blueprint-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.42;
+}
+
+.bp-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(56, 232, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 232, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(to right, rgba(56, 232, 255, 0.14) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 232, 255, 0.14) 1px, transparent 1px);
+  background-size: 24px 24px, 24px 24px, 120px 120px, 120px 120px;
+  mask-image: radial-gradient(circle at 50% 45%, rgba(0,0,0,1) 25%, rgba(0,0,0,0.25) 85%);
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, rgba(0,0,0,1) 25%, rgba(0,0,0,0.25) 85%);
+}
+
+.bp-crosshair {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border-color: rgba(56, 232, 255, 0.28);
+  border-style: solid;
+  border-width: 0;
+}
+.bp-tl { top: 20px; left: 20px; border-top-width: 1.5px; border-left-width: 1.5px; }
+.bp-tr { top: 20px; right: 20px; border-top-width: 1.5px; border-right-width: 1.5px; }
+.bp-bl { bottom: 20px; left: 20px; border-bottom-width: 1.5px; border-left-width: 1.5px; }
+.bp-br { bottom: 20px; right: 20px; border-bottom-width: 1.5px; border-right-width: 1.5px; }
+
+/* Minimal Login Screen */
 .login-screen {
+  position: relative;
+  z-index: 2;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 1.5rem;
 }
 .minimal-login {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.2rem;
-  width: 280px;
+  gap: 1.1rem;
+  width: 100%;
+  max-width: 310px;
 }
-.core-ring-small {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  border: 2px solid var(--cyan);
-  box-shadow: 0 0 25px var(--cyan), inset 0 0 15px var(--cyan);
-  animation: spin 6s linear infinite;
+.login-emblem {
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  color: var(--cyan-bright);
+  text-shadow: 0 0 18px var(--cyan), 0 0 36px rgba(56, 232, 255, 0.5);
 }
 .minimal-login input {
   width: 100%;
-  background: rgba(2, 10, 24, 0.8);
-  border: 1px solid rgba(0, 240, 255, 0.35);
+  background: rgba(2, 14, 28, 0.85);
+  border: 1.5px solid rgba(56, 232, 255, 0.45);
   color: var(--text);
-  padding: 0.85rem 1rem;
+  padding: 0.9rem 1.1rem;
   border-radius: 999px;
   text-align: center;
-  font-size: 0.95rem;
+  font-size: 1rem;
   outline: none;
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.12);
+  box-shadow: 0 0 24px rgba(56, 232, 255, 0.15);
 }
-.error-text { color: #ef4444; font-size: 0.82rem; min-height: 1em; }
+.login-submit {
+  width: 100%;
+  background: rgba(56, 232, 255, 0.18);
+  border: 1.5px solid var(--cyan);
+  color: var(--cyan-bright);
+  padding: 0.8rem;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(56, 232, 255, 0.25);
+}
+.error-text { color: #f87171; font-size: 0.84rem; min-height: 1.1em; }
 
-/* Pure Full-Screen Voice Canvas */
+/* Full-Screen J.A.R.V.I.S. Canvas (Desktop & Mobile PWA) */
 .pure-voice-screen {
+  position: relative;
+  z-index: 2;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3.2rem;
-  padding: 2rem;
+  gap: 1.8rem;
+  padding: 1.25rem;
   cursor: pointer;
 }
 
-/* Arc Reactor Holographic Core */
-.reactor-core {
+/* Multi-Ring J.A.R.V.I.S. Holographic Dial */
+.jarvis-dial {
   position: relative;
-  width: 240px;
-  height: 240px;
+  width: min(84vw, 430px);
+  height: min(84vw, 430px);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.25s ease;
+  transition: transform 0.15s ease-out, filter 0.25s ease;
 }
 
-.ring {
+.jarvis-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.svg-ring-outer {
+  transform-origin: 250px 250px;
+  animation: rotate-cw 28s linear infinite;
+}
+
+.svg-ring-halo {
+  transform-origin: 250px 250px;
+  animation: rotate-ccw 20s linear infinite;
+}
+
+.svg-ring-gold {
+  transform-origin: 250px 250px;
+  animation: rotate-cw 16s ease-in-out infinite alternate;
+}
+
+.svg-ring-inner {
+  transform-origin: 250px 250px;
+  animation: rotate-ccw 11s linear infinite;
+}
+
+/* Center J.A.R.V.I.S. Emblem Text */
+.jarvis-center-text {
   position: absolute;
-  border-radius: 50%;
+  font-size: clamp(1.35rem, 5.2vw, 2.15rem);
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  padding-left: 0.22em;
+  color: #f0fdff;
+  text-shadow:
+    0 0 10px #ffffff,
+    0 0 22px #38e8ff,
+    0 0 44px #0284c7;
   pointer-events: none;
+  transition: transform 0.15s ease, text-shadow 0.2s ease;
 }
 
-.ring-outer {
-  inset: 0;
-  border: 2px solid rgba(0, 240, 255, 0.32);
-  border-top-color: var(--cyan);
-  border-bottom-color: var(--cyan);
-  box-shadow: 0 0 35px rgba(0, 240, 255, 0.18);
-  animation: spin 10s linear infinite;
+/* Reactive States: Awake / Busy / Speaking */
+.jarvis-dial.awake {
+  filter: drop-shadow(0 0 18px rgba(56, 232, 255, 0.35));
 }
 
-.ring-mid {
-  inset: 24px;
-  border: 2px dashed rgba(0, 240, 255, 0.48);
-  animation: spin-rev 7s linear infinite;
+.jarvis-dial.busy .svg-ring-outer {
+  animation-duration: 5s;
+}
+.jarvis-dial.busy .svg-ring-inner {
+  animation-duration: 3s;
+}
+.jarvis-dial.busy .jarvis-center-text {
+  color: #fde68a;
+  text-shadow: 0 0 14px #f5b027, 0 0 35px #f59e0b;
 }
 
-.ring-inner {
-  inset: 48px;
-  border: 2px solid rgba(0, 240, 255, 0.25);
-  border-left-color: #67e8f9;
-  border-right-color: #67e8f9;
-  animation: spin 4.5s linear infinite;
+.jarvis-dial.speaking {
+  animation: jarvis-speak-pulse 0.26s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 32px rgba(56, 232, 255, 0.72));
+}
+.jarvis-dial.speaking .svg-ring-outer {
+  animation-duration: 9s;
+}
+.jarvis-dial.speaking .svg-ring-halo {
+  animation-duration: 7s;
 }
 
-.core-eye {
-  width: 96px;
-  height: 96px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #ffffff 0%, #00f0ff 45%, rgba(0, 240, 255, 0.08) 80%);
-  box-shadow: 0 0 45px var(--cyan), 0 0 90px rgba(0, 240, 255, 0.35);
-  transition: all 0.2s ease;
+@keyframes rotate-cw {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes rotate-ccw {
+  0% { transform: rotate(360deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes jarvis-speak-pulse {
+  0% { transform: scale(1.0); }
+  100% { transform: scale(1.055); }
 }
 
-/* State Modifiers on Reactor */
-.reactor-core.awake .core-eye {
-  background: radial-gradient(circle, #ffffff 0%, #10b981 45%, rgba(16, 185, 129, 0.1) 80%);
-  box-shadow: 0 0 55px var(--emerald), 0 0 110px rgba(16, 185, 129, 0.45);
-  transform: scale(1.08);
-}
-.reactor-core.awake .ring-outer {
-  border-color: rgba(16, 185, 129, 0.45);
-  border-top-color: var(--emerald);
-  border-bottom-color: var(--emerald);
-}
-
-.reactor-core.busy .core-eye {
-  background: radial-gradient(circle, #ffffff 0%, #f59e0b 45%, rgba(245, 158, 11, 0.1) 80%);
-  box-shadow: 0 0 60px var(--amber), 0 0 110px rgba(245, 158, 11, 0.5);
-  animation: throb 0.55s ease-in-out infinite alternate;
-}
-
-.reactor-core.speaking .core-eye {
-  background: radial-gradient(circle, #ffffff 0%, #00f0ff 50%, rgba(99, 102, 241, 0.2) 85%);
-  box-shadow: 0 0 75px #00f0ff, 0 0 140px rgba(0, 240, 255, 0.65);
-  animation: voice-wave 0.28s ease-in-out infinite alternate;
-}
-
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-@keyframes spin-rev { 0% { transform: rotate(360deg); } 100% { transform: rotate(0deg); } }
-@keyframes throb { 0% { transform: scale(0.95); } 100% { transform: scale(1.12); } }
-@keyframes voice-wave { 0% { transform: scale(1.0); } 100% { transform: scale(1.22); } }
-
-/* Minimal Movie-HUD Subtitles */
+/* Minimalist Movie-HUD Subtitles */
 .voice-hud-caption {
-  max-width: 760px;
+  width: 100%;
+  max-width: 720px;
   text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  min-height: 110px;
+  gap: 0.55rem;
+  min-height: 96px;
+  padding: 0 0.75rem;
 }
 
 .jarvis-state {
-  font-size: 0.76rem;
-  letter-spacing: 0.24em;
+  font-size: clamp(0.68rem, 2.2vw, 0.8rem);
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgba(0, 240, 255, 0.75);
+  color: var(--cyan);
+  text-shadow: 0 0 10px rgba(56, 232, 255, 0.45);
 }
 
 .jarvis-heard {
-  font-size: 0.95rem;
+  font-size: clamp(0.85rem, 2.6vw, 0.98rem);
   color: var(--muted);
   font-style: italic;
-  min-height: 1.4em;
+  min-height: 1.3em;
 }
 
 .jarvis-reply {
-  font-size: 1.22rem;
+  font-size: clamp(1rem, 3.2vw, 1.24rem);
   font-weight: 500;
   color: #f0fdff;
-  line-height: 1.5;
-  text-shadow: 0 0 18px rgba(0, 240, 255, 0.35);
+  line-height: 1.45;
+  text-shadow: 0 0 16px rgba(56, 232, 255, 0.4);
 }
