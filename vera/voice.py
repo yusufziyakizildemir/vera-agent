@@ -84,7 +84,7 @@ class VoiceEngine:
             return None
         if len(speech_text) > s.voice_clone_max_chars:
             return None
-        ref_url = f"{base}/api/voice/ref/{s.voice_ref_token}.mp3"
+        ref_url = f"{base}/api/voice/ref/{s.voice_ref_token}.wav"
 
         def _call() -> bytes | None:
             from gradio_client import Client
@@ -93,7 +93,7 @@ class VoiceEngine:
             out = client.predict(
                 text=speech_text,
                 reference_audio_url=ref_url,
-                example_audio_name="audio_1.wav",
+                example_audio_name=None,
                 language="Turkish",
                 temperature=0.7,
                 speed=1.1,

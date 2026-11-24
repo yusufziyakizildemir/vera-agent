@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import secrets
+import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -215,12 +217,38 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
             )
         return {"reply": reply.text, "tools_used": reply.tools_used, "filename": safe_name}
 
-    @app.get("/api/voice/ref/{token}.mp3")
+    @app.get("/api/voice/ref/{token}.wav")
     async def voice_reference(token: str) -> Response:
-        # Unguessable per-deployment URL: only the XTTS Space fetches it
+        # Unguessable per-deployment URL: only the XTTS Space fetches it as PCM WAV
         if not secrets.compare_digest(token, cfg.voice_ref_token) or not cfg.voice_reference_path.exists():
             raise HTTPException(status_code=404, detail="Not found")
-        return Response(content=cfg.voice_reference_path.read_bytes(), media_type="audio/mpeg")
+        wav_path = cfg.voice_dir / "reference.wav"
+        if not wav_path.exists() or wav_path.stat().st_mtime < cfg.voice_reference_path.stat().st_mtime:
+            ffmpeg = shutil.which("ffmpeg")
+            if not ffmpeg:
+                raise HTTPException(status_code=500, detail="ffmpeg unavailable")
+            tmp_wav = cfg.voice_dir / f".tmp_{secrets.token_hex(4)}.wav"
+            proc = await asyncio.create_subprocess_exec(
+                ffmpeg,
+                "-y",
+                "-i",
+                str(cfg.voice_reference_path),
+                "-ac",
+                "1",
+                "-ar",
+                "24000",
+                "-f",
+                "wav",
+                str(tmp_wav),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+            if proc.returncode != 0 or not tmp_wav.exists():
+                tmp_wav.unlink(missing_ok=True)
+                raise HTTPException(status_code=500, detail="WAV conversion failed")
+            tmp_wav.replace(wav_path)
+        return Response(content=wav_path.read_bytes(), media_type="audio/wav")
 
     @app.post("/api/voice/tts")
     async def voice_tts(body: ChatRequest, _=Depends(require_auth)) -> Response:
