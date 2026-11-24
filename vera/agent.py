@@ -289,8 +289,14 @@ class VeraAgent:
             "2) Google bağlıysa `calendar_list_events(days_ahead=1)` ile bugünkü toplantıları ve "
             "`gmail_list_messages(query='is:unread', max_results=5)` ile önemli okunmamış e-postaları özetle "
             "(bağlı değilse bunu atla, hata gibi gösterme).\n"
-            "3) `list_scheduled_jobs` ve `list_web_watchers` ile bugünkü hatırlatmaları/takipleri kontrol et.\n"
-            "4) Kısa, enerjik, düzenli ve motive edici bir Türkçe sabah özeti sun."
+            "3) Doçentlik Başvuru Süreci (DBS) takibi: Google bağlıysa "
+            "`gmail_list_messages(query='from:yok.gov.tr OR from:uak.gov.tr OR \"doçentlik\" OR \"DBS\" OR \"ÜAK\"', max_results=5)` "
+            "ile ÜAK/YÖK/DBS bildirimlerini ara; ilgili güncel bir e-posta varsa en sonunu "
+            "`gmail_read_message` ile okuyup doçentlik başvuru aşamasını net özetle (gerekirse `MEMORY.md` kaydını güncelle). "
+            "Yeni bildirim yoksa `search_memory` / `MEMORY.md` içindeki son kayıtlı doçentlik aşamasını kontrol edip "
+            "yeni bir ÜAK/YÖK bildirimi gelmediğini belirt.\n"
+            "4) `list_scheduled_jobs` ve `list_web_watchers` ile bugünkü hatırlatmaları/takipleri kontrol et.\n"
+            "5) Kısa, enerjik, düzenli ve motive edici bir Türkçe sabah özeti sun."
         )
         reply = await self.handle_message(
             user_text=prompt,
