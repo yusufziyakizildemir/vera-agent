@@ -11,6 +11,7 @@ import threading
 import time
 from pathlib import Path
 
+import edge_tts
 import httpx
 
 from vera.config import Settings
@@ -156,8 +157,6 @@ class VoiceEngine:
 
     async def synthesize_mp3(self, text: str, voice: str | None = None) -> bytes:
         """Cloned voice first (short replies), Edge-TTS fallback."""
-        import edge_tts
-
         speech_text = clean_text_for_speech(text)
         if not speech_text:
             raise ValueError("Seslendirilecek metin boş.")

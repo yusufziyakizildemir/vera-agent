@@ -85,17 +85,23 @@ def _upper_schema_types(schema: dict[str, Any]) -> dict[str, Any]:
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolDef] = {}
+        self._schema_cache: dict[tuple[str, Any], list[dict[str, Any]]] = {}
 
     def register(self, tool: ToolDef) -> None:
         self._tools[tool.name] = tool
+        self._schema_cache.clear()
 
     def get(self, name: str) -> ToolDef | None:
         return self._tools.get(name)
 
-    def list_tools(self, only_enabled: bool = True) -> list[ToolDef]:
+    def list_tools(
+        self, only_enabled: bool = True, categories: set[str] | None = None
+    ) -> list[ToolDef]:
         items = list(self._tools.values())
         if only_enabled:
             items = [t for t in items if t.enabled]
+        if categories is not None:
+            items = [t for t in items if t.category in categories]
         return sorted(items, key=lambda x: (x.category, x.name))
 
     def set_enabled(self, name: str, enabled: bool) -> bool:
@@ -103,13 +109,38 @@ class ToolRegistry:
         if not tool:
             return False
         tool.enabled = enabled
+        self._schema_cache.clear()
         return True
 
-    def gemini_declarations(self) -> list[dict[str, Any]]:
-        return [t.to_gemini_declaration() for t in self.list_tools(only_enabled=True)]
+    def gemini_declarations(
+        self, categories: set[str] | None = None
+    ) -> list[dict[str, Any]]:
+        if categories is not None and len(categories) == 0:
+            return []
+        key = ("gemini", frozenset(categories) if categories is not None else None)
+        cached = self._schema_cache.get(key)
+        if cached is None:
+            cached = [
+                t.to_gemini_declaration()
+                for t in self.list_tools(only_enabled=True, categories=categories)
+            ]
+            self._schema_cache[key] = cached
+        return list(cached)
 
-    def openai_tools(self) -> list[dict[str, Any]]:
-        return [t.to_openai_tool() for t in self.list_tools(only_enabled=True)]
+    def openai_tools(
+        self, categories: set[str] | None = None
+    ) -> list[dict[str, Any]]:
+        if categories is not None and len(categories) == 0:
+            return []
+        key = ("openai", frozenset(categories) if categories is not None else None)
+        cached = self._schema_cache.get(key)
+        if cached is None:
+            cached = [
+                t.to_openai_tool()
+                for t in self.list_tools(only_enabled=True, categories=categories)
+            ]
+            self._schema_cache[key] = cached
+        return list(cached)
 
     async def execute(self, name: str, args: dict[str, Any], ctx: ToolContext) -> Any:
         tool = self._tools.get(name)

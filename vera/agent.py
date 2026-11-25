@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
@@ -80,6 +81,74 @@ class VeraAgent:
         self.registry = build_default_registry()
         self.scheduler: VeraScheduler | None = None
         self.proactive_sender: Callable[[str, bool], Awaitable[None]] | None = None
+        self._skills_cache: str = ""
+        self._skills_cache_at: float = 0.0
+
+    def _get_skills_index_cached(self) -> str:
+        """Caches workspace skill index for 60s to avoid per-turn disk scans."""
+        now = time.monotonic()
+        if not self._skills_cache or (now - self._skills_cache_at) > 60.0:
+            self._skills_cache = build_skills_prompt_index(self.settings.skills_dir)
+            self._skills_cache_at = now
+        return self._skills_cache
+
+    _TOOL_DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
+        "google": (
+            "mail", "e-posta", "eposta", "gmail", "gelen kutu", "takvim", "toplantı",
+            "randevu", "etkinlik", "drive", "docs", "sheets", "tablo", "doçentlik",
+            "dbs", "üak", "yök", "brifing",
+        ),
+        "intel": (
+            "dolar", "euro", "kur", "döviz", "sterlin", "kripto", "bitcoin", "btc",
+            "eth", "solana", "haber", "gündem", "son dakika", "makale", "akademik",
+            "doi", "arxiv", "pubmed", "crossref", "vikipedi", "wiki", "ezan",
+            "namaz", "iftar", "imsak", "tatil", "bayram",
+        ),
+        "web": (
+            "ara", "araştır", "bul", "internet", "web", "site", "link", "http",
+            "hava", "sıcaklık", "yağmur", "derece", "takip et", "izle", "fiyat",
+            "kontrol",
+        ),
+        "productivity": (
+            "görev", "yapılacak", "liste", "todo", "tamamla", "harcama", "bütçe",
+            "masraf", "ödedim", "harcadım", "market", "fatura",
+        ),
+        "scheduler": (
+            "hatırlat", "alarm", "zamanla", "yarın", "sabah", "dakika sonra",
+            "saat sonra", "her gün", "brifing", "cron",
+        ),
+        "utils": (
+            "hesapla", "kaç eder", "çarpı", "bölü", "karekök", "yüzde", "çevir",
+            "dönüştür", "km", "mil", "kg", "gb", "mb", "saat kaç", "saat",
+            "dünya saati", "youtube", "youtu.be",
+        ),
+        "memory": (
+            "hatırla", "unutma", "kaydet", "hafıza", "profil", "not al",
+            "biliyor musun", "daha önce", "doçentlik", "aşama",
+        ),
+        "documents": ("belge", "pdf", "excel", "word", "pptx", "dosya"),
+        "system": ("sistem", "durum", "sunucu", "dosya"),
+        "skills": ("yetenek", "skill", "beceri"),
+        "mcp": ("mcp",),
+    }
+
+    def _select_tool_categories(
+        self, user_text: str, channel: str, has_attachments: bool
+    ) -> set[str] | None:
+        """Narrows tool schemas by Turkish/English domain intent to slash prompt latency."""
+        if channel == "scheduler" or has_attachments:
+            return None
+        lower = user_text.replace("İ", "i").lower()
+        matched = {
+            cat
+            for cat, kws in self._TOOL_DOMAIN_KEYWORDS.items()
+            if any(kw in lower for kw in kws)
+        }
+        if matched:
+            return matched | {"memory"}
+        if len(user_text.strip()) <= 45:
+            return set()
+        return None
 
     def make_tool_context(self, session_id: str, channel: str) -> ToolContext:
         return ToolContext(
@@ -151,7 +220,7 @@ class VeraAgent:
 
         # 1) Instant local FTS5 memory recall (0.4ms, zero network embedding delay!)
         recalled = self.db.search_memory(query=user_text[:200], query_embedding=None, limit=4)
-        skills_index = build_skills_prompt_index(self.settings.skills_dir)
+        skills_index = self._get_skills_index_cached()
         system_prompt = self.memory.build_system_prompt(
             recalled_memories=recalled,
             skills_index=skills_index,
@@ -167,8 +236,10 @@ class VeraAgent:
             messages.append({"role": "user", "content": enriched_text})
 
         use_smart = self._should_use_smart_model(user_text)
-        tools_gemini = self.registry.gemini_declarations()
-        tools_openai = self.registry.openai_tools()
+        categories = self._select_tool_categories(user_text, channel, bool(image_attachments))
+        tools_gemini = self.registry.gemini_declarations(categories)
+        tools_openai = self.registry.openai_tools(categories)
+        voice_cap = 260 if channel in {"live_voice", "web"} and not use_smart else None
         ctx = self.make_tool_context(session_id=session_id, channel=channel)
 
         tools_used: list[str] = []
@@ -185,6 +256,7 @@ class VeraAgent:
                 tools_openai=tools_openai,
                 use_smart=use_smart,
                 attachments=image_attachments if step == 0 else None,
+                max_output_tokens=voice_cap,
             )
             last_model = resp.model
 

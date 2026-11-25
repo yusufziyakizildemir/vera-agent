@@ -127,6 +127,7 @@ class LLMRouter:
         tools_openai: list[dict[str, Any]] | None = None,
         use_smart: bool = False,
         attachments: list[dict[str, Any]] | None = None,
+        max_output_tokens: int | None = None,
     ) -> LLMResponse:
         """Executes a chat completion with automatic Gemini -> OpenRouter fallback."""
         errors: list[str] = []
@@ -164,6 +165,7 @@ class LLMRouter:
                         messages=messages,
                         tools_gemini=tools_gemini,
                         attachments=attachments,
+                        max_output_tokens=max_output_tokens,
                     )
                     self.db.log_event(
                         "llm_call",
@@ -221,6 +223,7 @@ class LLMRouter:
         messages: list[dict[str, Any]],
         tools_gemini: list[dict[str, Any]] | None,
         attachments: list[dict[str, Any]] | None = None,
+        max_output_tokens: int | None = None,
     ) -> LLMResponse:
         from google.genai import types
 
@@ -284,6 +287,8 @@ class LLMRouter:
             "system_instruction": system_prompt,
             "temperature": 0.35,
         }
+        if max_output_tokens:
+            config_kwargs["max_output_tokens"] = max_output_tokens
         if tools_gemini:
             config_kwargs["tools"] = [{"function_declarations": tools_gemini}]
         if "lite" not in model_name.lower():

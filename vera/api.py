@@ -7,6 +7,7 @@ import base64
 import logging
 import secrets
 import shutil
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -169,21 +170,28 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
 
     @app.post("/api/chat")
     async def chat_send(body: ChatRequest, _=Depends(require_auth)) -> dict[str, Any]:
+        t0 = time.monotonic()
         reply = await agent.handle_message(
             user_text=body.message, session_id=body.session_id, channel="web"
         )
+        llm_ms = round((time.monotonic() - t0) * 1000)
         audio_b64 = ""
+        tts_ms = 0
         if body.include_audio and reply.text:
+            t1 = time.monotonic()
             try:
                 mp3 = await agent.voice.synthesize_mp3(reply.text, voice=body.voice)
                 audio_b64 = base64.b64encode(mp3).decode("ascii")
             except Exception as exc:
                 logger.warning("Inline TTS üretilemedi: %s", exc)
+            tts_ms = round((time.monotonic() - t1) * 1000)
         return {
             "reply": reply.text,
             "tools_used": reply.tools_used,
             "model": reply.model,
             "audio_b64": audio_b64,
+            "voice_engine": agent.voice.last_engine if audio_b64 else "",
+            "timing_ms": {"llm": llm_ms, "tts": tts_ms},
             "pending_approvals": [
                 {"id": a.id, "tool_name": a.tool_name, "summary": a.summary, "args": a.args}
                 for a in reply.pending_approvals
