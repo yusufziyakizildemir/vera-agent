@@ -104,6 +104,7 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
         if start_background:
             scheduler.start()
             await tg_gateway.start()
+            asyncio.create_task(agent.voice.warmup())
         yield
         if start_background:
             await tg_gateway.stop()
@@ -222,7 +223,7 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
         # Unguessable per-deployment URL: only the XTTS Space fetches it as PCM WAV
         if not secrets.compare_digest(token, cfg.voice_ref_token) or not cfg.voice_reference_path.exists():
             raise HTTPException(status_code=404, detail="Not found")
-        wav_path = cfg.voice_dir / "reference.wav"
+        wav_path = cfg.voice_dir / "reference_7s.wav"
         if not wav_path.exists() or wav_path.stat().st_mtime < cfg.voice_reference_path.stat().st_mtime:
             ffmpeg = shutil.which("ffmpeg")
             if not ffmpeg:
@@ -233,10 +234,12 @@ def create_app(settings: Settings | None = None, start_background: bool = True) 
                 "-y",
                 "-i",
                 str(cfg.voice_reference_path),
+                "-t",
+                "7",
                 "-ac",
                 "1",
                 "-ar",
-                "24000",
+                "22050",
                 "-f",
                 "wav",
                 str(tmp_wav),

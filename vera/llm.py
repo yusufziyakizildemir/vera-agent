@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -41,14 +42,32 @@ class LLMRouter:
         self.settings = settings
         self.db = db
         self._genai_client = None
+        self._model_cooldown_until: dict[str, float] = {}
 
     def _get_gemini_client(self):
         if not self.settings.gemini_api_key:
             return None
         if self._genai_client is None:
             from google import genai
+            from google.genai import types
 
-            self._genai_client = genai.Client(api_key=self.settings.gemini_api_key)
+            try:
+                http_opts = types.HttpOptions(
+                    timeout=15000,
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                )
+                self._genai_client = genai.Client(
+                    api_key=self.settings.gemini_api_key,
+                    http_options=http_opts,
+                )
+            except TypeError:
+                try:
+                    self._genai_client = genai.Client(
+                        api_key=self.settings.gemini_api_key,
+                        http_options=types.HttpOptions(timeout=15000),
+                    )
+                except Exception:
+                    self._genai_client = genai.Client(api_key=self.settings.gemini_api_key)
         return self._genai_client
 
     async def embed(self, text: str) -> list[float] | None:
@@ -113,24 +132,31 @@ class LLMRouter:
         errors: list[str] = []
 
         if self.settings.gemini_api_key:
-            primary_model = (
-                self.settings.gemini_smart_model
-                if use_smart
-                else self.settings.gemini_fast_model
+            preferred = (
+                (
+                    "gemini-3.5-flash",
+                    self.settings.gemini_smart_model,
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.8-flash",
+                    "gemini-3.7-flash",
+                )
+                if (use_smart or attachments)
+                else (
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.5-flash",
+                    self.settings.gemini_fast_model,
+                    "gemini-3.8-flash",
+                    "gemini-3.7-flash",
+                )
             )
             candidates: list[str] = []
-            for m in (
-                primary_model,
-                self.settings.gemini_fast_model,
-                "gemini-3.8-flash",
-                "gemini-3.7-flash",
-                "gemini-3.5-flash",
-                "gemini-3.1-flash-lite",
-            ):
+            for m in preferred:
                 if m and m not in candidates:
                     candidates.append(m)
 
-            for model_name in candidates:
+            now = time.monotonic()
+            active = [m for m in candidates if self._model_cooldown_until.get(m, 0.0) <= now]
+            for model_name in active or candidates:
                 try:
                     resp = await self._call_gemini(
                         model_name=model_name,
@@ -148,6 +174,9 @@ class LLMRouter:
                     )
                     return resp
                 except Exception as exc:
+                    msg = str(exc).lower()
+                    if any(k in msg for k in ("503", "429", "404", "unavailable", "exhausted")):
+                        self._model_cooldown_until[model_name] = time.monotonic() + 300.0
                     logger.warning("Gemini (%s) hata verdi: %s", model_name, exc)
                     errors.append(f"Gemini({model_name}): {exc}")
 
@@ -257,10 +286,11 @@ class LLMRouter:
         }
         if tools_gemini:
             config_kwargs["tools"] = [{"function_declarations": tools_gemini}]
-        try:
-            config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-        except Exception:
-            pass
+        if "lite" not in model_name.lower():
+            try:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            except Exception:
+                pass
 
         config = types.GenerateContentConfig(**config_kwargs)
 
@@ -272,7 +302,10 @@ class LLMRouter:
                     config=config,
                 )
             except Exception as e:
-                if "thinking" in str(e).lower():
+                err_l = str(e).lower()
+                if "thinking_config" in config_kwargs and (
+                    "thinking" in err_l or "invalid_argument" in err_l or "400" in err_l
+                ):
                     config_kwargs.pop("thinking_config", None)
                     return client.models.generate_content(
                         model=model_name,

@@ -7,6 +7,8 @@ import logging
 import re
 import shutil
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 import httpx
@@ -46,6 +48,30 @@ class VoiceEngine:
         self.settings = settings
         self.llm = llm
         self.last_engine = "edge"
+        self._clone_client = None
+        self._clone_lock = threading.Lock()
+        self._clone_cooldown_until: float = 0.0
+
+    def _get_clone_client(self):
+        with self._clone_lock:
+            if self._clone_client is None:
+                from gradio_client import Client
+
+                s = self.settings
+                self._clone_client = Client(
+                    s.voice_clone_space, token=s.hf_token or None, verbose=False
+                )
+            return self._clone_client
+
+    async def warmup(self) -> None:
+        """Pre-initializes the remote XTTS Gradio client cleanly in the background."""
+        s = self.settings
+        if not (s.voice_clone_enabled and s.voice_reference_path.exists()):
+            return
+        try:
+            await asyncio.to_thread(self._get_clone_client)
+        except Exception:
+            pass
 
     async def transcribe(
         self, audio_bytes: bytes, filename: str = "voice.ogg", mime_type: str = "audio/ogg"
@@ -79,6 +105,8 @@ class VoiceEngine:
         s = self.settings
         if not (s.voice_clone_enabled and s.voice_reference_path.exists()):
             return None
+        if time.monotonic() < self._clone_cooldown_until:
+            return None
         base = (s.public_base_url or "").rstrip("/")
         if not base.startswith("https://"):
             return None
@@ -87,16 +115,18 @@ class VoiceEngine:
         ref_url = f"{base}/api/voice/ref/{s.voice_ref_token}.wav"
 
         def _call() -> bytes | None:
-            from gradio_client import Client
-
-            client = Client(s.voice_clone_space, token=s.hf_token or None, verbose=False)
+            client = self._get_clone_client()
             out = client.predict(
                 text=speech_text,
                 reference_audio_url=ref_url,
                 example_audio_name=None,
                 language="Turkish",
-                temperature=0.7,
-                speed=1.1,
+                temperature=0.65,
+                speed=1.12,
+                gpt_cond_len=8,
+                remove_silence_enabled=False,
+                text_splitting_method="No splitting",
+                enable_preprocessing=False,
                 api_name="/voice_clone_synthesis",
             )
             path = out[0] if isinstance(out, (list, tuple)) else out
@@ -105,7 +135,10 @@ class VoiceEngine:
         try:
             wav = await asyncio.wait_for(asyncio.to_thread(_call), timeout=s.voice_clone_timeout)
         except Exception as exc:
-            logger.warning("Ses klonlama atlandı, Edge-TTS yedeği: %s", exc)
+            with self._clone_lock:
+                self._clone_client = None
+                self._clone_cooldown_until = time.monotonic() + 180.0
+            logger.warning("Ses klonlama atlandı (3dk bekleme), Edge-TTS yedeği: %s", exc)
             return None
         if not wav:
             return None

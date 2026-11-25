@@ -258,7 +258,7 @@ async function startMobileVadEngine() {
 
       // Hands-free Voice Activity Detection
       const SPEECH_THRESHOLD = 0.026;
-      const SILENCE_HOLD_MS = 850;
+      const SILENCE_HOLD_MS = 520;
       const MAX_CLIP_MS = 14000;
 
       if (rms > SPEECH_THRESHOLD) {
@@ -282,7 +282,14 @@ function beginClipRecording() {
   try {
     state.mediaChunks = [];
     const mime = getSupportedMimeType();
-    const mr = mime ? new MediaRecorder(state.micStream, { mimeType: mime }) : new MediaRecorder(state.micStream);
+    let mr;
+    try {
+      mr = mime
+        ? new MediaRecorder(state.micStream, { mimeType: mime, audioBitsPerSecond: 24000 })
+        : new MediaRecorder(state.micStream, { audioBitsPerSecond: 24000 });
+    } catch {
+      mr = mime ? new MediaRecorder(state.micStream, { mimeType: mime }) : new MediaRecorder(state.micStream);
+    }
     state.mediaRec = mr;
     state.isRecordingClip = true;
     state.speechStartAt = Date.now();
@@ -299,7 +306,7 @@ function beginClipRecording() {
       if (dial) dial.style.transform = "";
       const dur = Date.now() - state.speechStartAt;
       const blob = new Blob(state.mediaChunks, { type: mr.mimeType || "audio/webm" });
-      if (dur < 380 || blob.size < 600 || state.busy) {
+      if (dur < 280 || blob.size < 600 || state.busy) {
         if (!state.busy && !state.speaking) {
           setCoreVisual("awake", "DİNLİYORUM YUSUF BEY — DOĞRUDAN KONUŞUN");
         }
@@ -461,7 +468,7 @@ function ensureDesktopSpeechRec() {
             try { rec.stop(); } catch {}
             sendTextVoiceCommand(pending);
           }
-        }, 700);
+        }, 420);
       }
     };
 

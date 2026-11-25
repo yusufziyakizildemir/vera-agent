@@ -33,8 +33,8 @@ class Settings(BaseSettings):
 
     # LLM Providers
     gemini_api_key: str = Field(default="")
-    gemini_fast_model: str = Field(default="gemini-3.8-flash")
-    gemini_smart_model: str = Field(default="gemini-3.8-flash")
+    gemini_fast_model: str = Field(default="gemini-3.5-flash-lite")
+    gemini_smart_model: str = Field(default="gemini-3.5-flash")
     gemini_live_model: str = Field(default="gemini-3.8-flash")
     gemini_embed_model: str = Field(default="gemini-embedding-001")
 
@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     # Voice cloning (free XTTS v2 Space on Hugging Face), falls back to Edge-TTS
     voice_clone_enabled: bool = Field(default=True)
     voice_clone_space: str = Field(default="hasanbasbunar/Voice-Cloning-XTTS-v2")
-    voice_clone_timeout: int = Field(default=25)
+    voice_clone_timeout: int = Field(default=7)
     voice_clone_max_chars: int = Field(default=280)
 
     def model_post_init(self, __context: Any) -> None:
